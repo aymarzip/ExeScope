@@ -1,0 +1,27 @@
+## Build and Output directories
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+TestResults/
+
+## Visual Studio & JetBrains Rider
+.vs/
+.idea/
+.vscode/
+*.user
+*.userprefs
+*.suo
+*.userosscache
+*.sln.docstates
+
+## ExeScope local analysis sessions and test captures
+ExeScope_Results/
+*.pcapng
+*.jsonl
+*.log
+artifacts/
+
+## OS generated files
+.DS_Store
+Thumbs.db
