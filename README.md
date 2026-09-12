@@ -58,11 +58,15 @@ dotnet build ExeScope.sln -c Release
 dotnet test tests/ExeScope.Tests/ExeScope.Tests.csproj -c Release
 ```
 
-### Исполняемые файлы
+### Готовые бинарники (Release)
 
-После сборки файлы находятся в следующих путях:
-- GUI анализатора: `src\ExeScope.UI\bin\Release\net8.0-windows\ExeScope.UI.exe`
-- Тестовый образец: `src\ExeScope.TestTarget\bin\Release\net8.0-windows\ExeScope.TestTarget.exe`
+В папке `release/` лежат готовые скомпилированные исполняемые файлы:
+- `release/ExeScope.UI.exe` (графический интерфейс анализатора)
+- `release/ExeScope.TestTarget.exe` (тестовый бинарник для проверки всех подсистем)
+
+При самостоятельной сборке из исходников файлы также доступны в:
+- `src\ExeScope.UI\bin\Release\net8.0-windows\ExeScope.UI.exe`
+- `src\ExeScope.TestTarget\bin\Release\net8.0-windows\ExeScope.TestTarget.exe`
 
 ## Быстрый сценарий работы
 
