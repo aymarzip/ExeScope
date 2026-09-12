@@ -1,5 +1,11 @@
 # ExeScope
 
+[![Build and Test](https://github.com/aymarzip/ExeScope/actions/workflows/ci.yml/badge.svg)](https://github.com/aymarzip/ExeScope/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/aymarzip/ExeScope/releases)
+[![.NET](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://microsoft.com/windows)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 Инструмент для динамического анализа подозрительных Windows-бинарников (.exe) в изолированной тестовой среде.
 
 Анализатор работает в режиме пассивного наблюдателя. Он не запускает исследуемый файл самостоятельно: вы выбираете целевой `.exe`, нажимаете «Ожидать запуск» и запускаете образец руками. ExeScope перехватывает момент старта, привязывается к процессу, строит дерево дочерних процессов и в реальном времени собирает события файловой системы, реестра и сети.

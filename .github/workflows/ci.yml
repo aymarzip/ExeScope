@@ -1,0 +1,30 @@
+﻿name: Build and Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build & Verify (.NET 8 Windows)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore ExeScope.sln
+
+    - name: Build solution (Release)
+      run: dotnet build ExeScope.sln -c Release --no-restore
+
+    - name: Run unit and integration tests
+      run: dotnet test tests/ExeScope.Tests/ExeScope.Tests.csproj -c Release --no-build --verbosity normal
