@@ -119,6 +119,10 @@ public static class PathSanitizer
     public static string CreateSafeArtifactDestination(string artifactsBaseDirectory, long artifactIndex, string originalPath, string sha256)
     {
         string fullBase = Path.GetFullPath(artifactsBaseDirectory);
+        if (!fullBase.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+        {
+            fullBase += Path.DirectorySeparatorChar;
+        }
 
         string safeName = SanitizeFileName(originalPath);
         string shortHash = sha256.Length >= 8 ? sha256[..8] : "00000000";
@@ -126,7 +130,6 @@ public static class PathSanitizer
 
         string destination = Path.GetFullPath(Path.Combine(fullBase, finalFileName));
 
-        // Security check: Must reside strictly inside fullBase!
         if (!destination.StartsWith(fullBase, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"Security violation: path traversal detected! '{destination}' escapes '{fullBase}'");

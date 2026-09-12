@@ -232,12 +232,12 @@ public class HtmlReportGenerator
     </header>
 
     <div class=""tabs"">
-        <button class=""tab-btn active"" onclick=""showTab('tab-tree')"">Process Tree</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-files')"">File Events ({events.Count(e => e.Category == EventCategory.File)})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-registry')"">Registry Events ({events.Count(e => e.Category == EventCategory.Registry)})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-network')"">Network Events ({events.Count(e => e.Category == EventCategory.Network)})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-artifacts')"">Saved Artifacts ({artifacts.Count})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-diagnostics')"">Diagnostics ({diagnostics.Count})</button>
+        <button class=""tab-btn active"" onclick=""showTab('tab-tree', this)"">Process Tree</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-files', this)"">File Events ({events.Count(e => e.Category == EventCategory.File)})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-registry', this)"">Registry Events ({events.Count(e => e.Category == EventCategory.Registry)})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-network', this)"">Network Events ({events.Count(e => e.Category == EventCategory.Network)})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-artifacts', this)"">Saved Artifacts ({artifacts.Count})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-diagnostics', this)"">Diagnostics ({diagnostics.Count})</button>
     </div>
 
     <!-- Process Tree Tab -->
@@ -392,7 +392,14 @@ public class HtmlReportGenerator
 
     <!-- Artifacts Tab -->
     <div id=""tab-artifacts"" class=""tab-panel"">
-        <input type=""text"" class=""search-box"" placeholder=""Search saved artifacts..."" onkeyup=""filterTable('art-table', this.value)"">
+        <input type=""text"" class=""search-box"" placeholder=""Search saved artifacts..."" onkeyup=""filterTable('art-table', this.value)"">");
+
+        if (artifacts.Count > maxTableRows)
+        {
+            sb.Append($@"<div class=""info-banner"">Showing first {maxTableRows.ToString("N0", CultureInfo.InvariantCulture)} of {artifacts.Count.ToString("N0", CultureInfo.InvariantCulture)} saved artifacts. Full records are stored in artifacts-index.jsonl.</div>");
+        }
+
+        sb.Append(@"
         <table id=""art-table"">
             <thead>
                 <tr>
@@ -406,8 +413,10 @@ public class HtmlReportGenerator
             </thead>
             <tbody>");
 
+        int renderedArt = 0;
         foreach (var art in artifacts)
         {
+            if (++renderedArt > maxTableRows) break;
             sb.Append($@"
                 <tr>
                     <td class=""mono"">{art.TimestampUtc:HH:mm:ss.fff}</td>
@@ -425,7 +434,14 @@ public class HtmlReportGenerator
     </div>
 
     <!-- Diagnostics Tab -->
-    <div id=""tab-diagnostics"" class=""tab-panel"">
+    <div id=""tab-diagnostics"" class=""tab-panel"">");
+
+        if (diagnostics.Count > maxTableRows)
+        {
+            sb.Append($@"<div class=""info-banner"">Showing first {maxTableRows.ToString("N0", CultureInfo.InvariantCulture)} of {diagnostics.Count.ToString("N0", CultureInfo.InvariantCulture)} diagnostic messages. Full logs are stored in diagnostics.log.</div>");
+        }
+
+        sb.Append(@"
         <table id=""diag-table"">
             <thead>
                 <tr>
@@ -437,8 +453,10 @@ public class HtmlReportGenerator
             </thead>
             <tbody>");
 
+        int renderedDiag = 0;
         foreach (var d in diagnostics)
         {
+            if (++renderedDiag > maxTableRows) break;
             string badgeClass = d.Level switch
             {
                 LogLevel.Error or LogLevel.Fatal => "badge-danger",
@@ -462,11 +480,15 @@ public class HtmlReportGenerator
 </div>
 
 <script>
-    function showTab(tabId) {
+    function showTab(tabId, btn) {
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(tabId).classList.add('active');
-        event.target.classList.add('active');
+        if (btn) {
+            btn.classList.add('active');
+        } else if (window.event && window.event.target) {
+            window.event.target.classList.add('active');
+        }
     }
 
     function filterTable(tableId, query) {

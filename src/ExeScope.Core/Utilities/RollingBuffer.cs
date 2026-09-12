@@ -103,6 +103,7 @@ public class RollingBuffer<T> : IEnumerable<T>
             _head = 0;
             _count = 0;
         }
+        Interlocked.Exchange(ref _totalAdded, 0);
     }
 
     public IEnumerator<T> GetEnumerator()

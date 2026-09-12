@@ -99,4 +99,82 @@ public class HighLoadStorageTests
             try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task FileSessionStorage_FlushAsync_FlushesSmallBatchImmediatelyWithoutDisposing()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"ExeScope_Flush_{Guid.NewGuid():N}");
+        var logger = new DiagnosticLogger();
+
+        try
+        {
+            var storage = new FileSessionStorage(tempDir, rootPid: 9999, logger, channelCapacity: 50_000);
+
+            // Enqueue only 7 items (far below 1,000 batch size)
+            for (int i = 0; i < 7; i++)
+            {
+                storage.EnqueueEvent(new ProcessEvent
+                {
+                    EventId = i + 1,
+                    ProcessId = 9999,
+                    ProcessImage = "flush_test.exe",
+                    Summary = $"Flush event {i}"
+                });
+            }
+
+            // Flush without disposing - must immediately flush to disk
+            await storage.FlushAsync();
+
+            string eventsFile = Path.Combine(storage.SessionDirectory, "events.jsonl");
+            Assert.True(File.Exists(eventsFile));
+
+            var recorded = storage.ReadRecordedEvents();
+            Assert.Equal(7, recorded.Count);
+            Assert.Equal(7, storage.TotalEventsWritten);
+
+            await storage.DisposeAsync();
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task FileSessionStorage_PeriodicIdleFlush_WritesEventsAutomatically()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"ExeScope_IdleFlush_{Guid.NewGuid():N}");
+        var logger = new DiagnosticLogger();
+
+        try
+        {
+            var storage = new FileSessionStorage(tempDir, rootPid: 8888, logger, channelCapacity: 50_000);
+
+            for (int i = 0; i < 3; i++)
+            {
+                storage.EnqueueEvent(new ProcessEvent
+                {
+                    EventId = i + 1,
+                    ProcessId = 8888,
+                    ProcessImage = "idle_flush.exe",
+                    Summary = $"Idle event {i}"
+                });
+            }
+
+            // Wait 350ms (timeout threshold is 150ms) without calling FlushAsync
+            await Task.Delay(350);
+
+            string eventsFile = Path.Combine(storage.SessionDirectory, "events.jsonl");
+            Assert.True(File.Exists(eventsFile));
+
+            var recorded = storage.ReadRecordedEvents();
+            Assert.Equal(3, recorded.Count);
+
+            await storage.DisposeAsync();
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+    }
 }

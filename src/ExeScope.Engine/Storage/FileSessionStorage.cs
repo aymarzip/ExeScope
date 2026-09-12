@@ -72,6 +72,8 @@ public class FileSessionStorage : ISessionStorage
         _queue.TryEnqueue(evt);
     }
 
+    private volatile TaskCompletionSource? _pendingFlush;
+
     private async Task ProcessQueueAsync(CancellationToken ct)
     {
         const int maxBatchSize = 1000;
@@ -89,17 +91,51 @@ public class FileSessionStorage : ISessionStorage
 
         try
         {
-            await foreach (var evt in _queue.ReadAllAsync(ct).ConfigureAwait(false))
-            {
-                batch.Add(evt);
+            var reader = _queue.Reader;
 
-                bool timeToFlush = (DateTime.UtcNow - lastFlushTime).TotalMilliseconds >= 200;
-                if (batch.Count >= maxBatchSize || timeToFlush)
+            while (!ct.IsCancellationRequested)
+            {
+                bool hasItems;
+                try
+                {
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    cts.CancelAfter(TimeSpan.FromMilliseconds(150));
+                    hasItems = await reader.WaitToReadAsync(cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    hasItems = false;
+                }
+
+                while (reader.TryRead(out var evt))
+                {
+                    batch.Add(evt);
+                    if (batch.Count >= maxBatchSize)
+                    {
+                        await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
+                        batch.Clear();
+                        lastFlushTime = DateTime.UtcNow;
+                    }
+                }
+
+                if (batch.Count > 0 && (DateTime.UtcNow - lastFlushTime).TotalMilliseconds >= 150)
                 {
                     await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
                     batch.Clear();
                     lastFlushTime = DateTime.UtcNow;
                 }
+
+                await CheckAndCompleteFlushAsync(streamWriter, batch).ConfigureAwait(false);
+
+                if (!hasItems && reader.Completion.IsCompleted)
+                {
+                    break;
+                }
+            }
+
+            while (reader.TryRead(out var evt))
+            {
+                batch.Add(evt);
             }
 
             if (batch.Count > 0)
@@ -107,9 +143,15 @@ public class FileSessionStorage : ISessionStorage
                 await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
                 batch.Clear();
             }
+
+            await CheckAndCompleteFlushAsync(streamWriter, batch).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            while (_queue.Reader.TryRead(out var evt))
+            {
+                batch.Add(evt);
+            }
             if (batch.Count > 0)
             {
                 await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
@@ -118,6 +160,27 @@ public class FileSessionStorage : ISessionStorage
         catch (Exception ex)
         {
             _logger.Error("Storage", "Error writing events to events.jsonl", ex);
+        }
+    }
+
+    private async Task CheckAndCompleteFlushAsync(StreamWriter writer, List<AnalysisEvent> batch)
+    {
+        var flush = Interlocked.Exchange(ref _pendingFlush, null);
+        if (flush != null)
+        {
+            try
+            {
+                if (batch.Count > 0)
+                {
+                    await WriteBatchAsync(writer, batch).ConfigureAwait(false);
+                    batch.Clear();
+                }
+                await writer.FlushAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+            flush.TrySetResult();
         }
     }
 
@@ -206,12 +269,17 @@ public class FileSessionStorage : ISessionStorage
 
     public async Task FlushAsync()
     {
-        var spinTimeout = DateTime.UtcNow.AddSeconds(2);
-        while (_queue.Reader.Count > 0 && DateTime.UtcNow < spinTimeout)
-        {
-            await Task.Delay(25).ConfigureAwait(false);
-        }
-        await Task.Delay(50).ConfigureAwait(false);
+        if (_isDisposed)
+            return;
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingFlush = tcs;
+
+        // Drain any unread items if waiting
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        timeoutCts.Token.Register(() => tcs.TrySetResult());
+
+        await tcs.Task.ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()

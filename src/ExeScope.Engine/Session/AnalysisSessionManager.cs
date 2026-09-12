@@ -124,6 +124,14 @@ public class AnalysisSessionManager : IAsyncDisposable
         _correlationEngine.OnRepeatedLaunchDetected += HandleRepeatedLaunchDetected;
         _correlationEngine.OnAllTrackedProcessesExited += HandleAllTrackedProcessesExited;
 
+        _inMemoryEvents.Clear();
+        _inMemoryArtifacts.Clear();
+        if (_storage != null)
+        {
+            await _storage.DisposeAsync().ConfigureAwait(false);
+            _storage = null;
+        }
+
         _collectors.Clear();
 
         var etwCollector = new EtwEventCollector(_correlationEngine, _logger, onFileModifiedForArtifact: (path, pid, image) =>
@@ -282,18 +290,9 @@ public class AnalysisSessionManager : IAsyncDisposable
 
                 await Task.Delay(200).ConfigureAwait(false);
 
-                lock (_stateLock)
-                {
-                    State = AnalysisSessionState.WaitingForLaunch;
-                }
+                await StartWaitingAsync().ConfigureAwait(false);
 
-                _correlationEngine = new ProcessCorrelationEngine(_targetExe!, _logger);
-                _correlationEngine.OnProcessStarted += HandleProcessStarted;
-                _correlationEngine.OnProcessTerminated += HandleProcessTerminated;
-                _correlationEngine.OnRepeatedLaunchDetected += HandleRepeatedLaunchDetected;
-                _correlationEngine.OnAllTrackedProcessesExited += HandleAllTrackedProcessesExited;
-
-                _correlationEngine.TryRegisterProcess(
+                _correlationEngine?.TryRegisterProcess(
                     repeated.ProcessId,
                     repeated.ParentProcessId,
                     repeated.ImagePath,
@@ -342,6 +341,14 @@ public class AnalysisSessionManager : IAsyncDisposable
                 try
                 {
                     await c.StopAsync().ConfigureAwait(false);
+                    if (c is IAsyncDisposable asyncDisp)
+                    {
+                        await asyncDisp.DisposeAsync().ConfigureAwait(false);
+                    }
+                    else if (c is IDisposable disp)
+                    {
+                        disp.Dispose();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -360,6 +367,7 @@ public class AnalysisSessionManager : IAsyncDisposable
             if (_artifactCollector != null)
             {
                 await _artifactCollector.DisposeAsync().ConfigureAwait(false);
+                _artifactCollector = null;
             }
 
             if (_currentMetadata != null)
@@ -378,12 +386,12 @@ public class AnalysisSessionManager : IAsyncDisposable
             var tree = _correlationEngine?.BuildProcessTree();
             _storage?.SaveProcessTree(tree);
 
+            await GenerateReportAsync().ConfigureAwait(false);
+
             if (_storage != null)
             {
-                await _storage.FlushAsync().ConfigureAwait(false);
+                await _storage.DisposeAsync().ConfigureAwait(false);
             }
-
-            await GenerateReportAsync().ConfigureAwait(false);
 
             _logger.Info("SessionManager", $"Session finalized. Directory: {CurrentSessionDirectory}");
         }

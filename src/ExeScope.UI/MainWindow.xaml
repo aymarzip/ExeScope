@@ -338,7 +338,7 @@
             <!-- TAB 2: Дерево процессов -->
             <TabItem Header="Дерево процессов">
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="0,0,6,6" Padding="12">
-                    <TreeView ItemsSource="{Binding ProcessTreeRoot.Children}" Background="Transparent" BorderThickness="0"
+                    <TreeView ItemsSource="{Binding ProcessTreeNodes}" Background="Transparent" BorderThickness="0"
                               VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate DataType="{x:Type models:ProcessNode}" ItemsSource="{Binding Children}">

@@ -26,16 +26,9 @@ public class Program
 
         try
         {
-            // 1. FILE OPERATIONS
             await PerformFileOperationsAsync();
-
-            // 2. CHILD PROCESS
             PerformChildProcessLaunch();
-
-            // 3. REGISTRY OPERATIONS
             PerformRegistryOperations();
-
-            // 4. NETWORK OPERATIONS
             await PerformNetworkOperationsAsync();
 
             Console.WriteLine("[ExeScope TestTarget] All test operations completed successfully.");
@@ -79,32 +72,25 @@ public class Program
         string renamedFile = Path.Combine(tempDir, "exescope_test_artifact_renamed.txt");
         string toDeleteFile = Path.Combine(tempDir, "exescope_delete_me.tmp");
 
-        // Cleanup any leftovers
         try { if (File.Exists(testFile)) File.Delete(testFile); } catch { }
         try { if (File.Exists(renamedFile)) File.Delete(renamedFile); } catch { }
         try { if (File.Exists(toDeleteFile)) File.Delete(toDeleteFile); } catch { }
 
-        // Create
         Console.WriteLine($"[File] Creating: {testFile}");
         await File.WriteAllTextAsync(testFile, "Initial content written by ExeScope TestTarget.\n");
 
-        // Read
         string content = await File.ReadAllTextAsync(testFile);
         Console.WriteLine($"[File] Read: {content.Length} characters.");
 
-        // Modify / Append
         Console.WriteLine($"[File] Modifying: {testFile}");
         await File.AppendAllTextAsync(testFile, $"Appended line at {DateTime.UtcNow:O}\n");
 
-        // Rename
         Console.WriteLine($"[File] Renaming to: {renamedFile}");
         File.Move(testFile, renamedFile);
 
-        // Read renamed
         string renamedContent = await File.ReadAllTextAsync(renamedFile);
         Console.WriteLine($"[File] Read renamed: {renamedContent.Length} characters.");
 
-        // Create and delete temporary file
         Console.WriteLine($"[File] Creating temporary file: {toDeleteFile}");
         await File.WriteAllTextAsync(toDeleteFile, "Temporary data to be deleted.");
 
@@ -149,32 +135,26 @@ public class Program
 
         try
         {
-            // Create / Open SubKey under HKCU (safe, standard user accessible)
             Console.WriteLine($@"[Registry] Opening/Creating HKCU\{subKeyName}");
             using (var key = Registry.CurrentUser.CreateSubKey(subKeyName, writable: true))
             {
                 if (key != null)
                 {
-                    // Set String Value
                     Console.WriteLine("[Registry] Setting value 'TestMarker' = 'DynamicAnalysisVerificationPassed'");
                     key.SetValue("TestMarker", "DynamicAnalysisVerificationPassed", RegistryValueKind.String);
 
-                    // Set DWORD Value
                     Console.WriteLine("[Registry] Setting value 'LaunchCount' = 42");
                     key.SetValue("LaunchCount", 42, RegistryValueKind.DWord);
 
-                    // Read Values
                     var val1 = key.GetValue("TestMarker");
                     var val2 = key.GetValue("LaunchCount");
                     Console.WriteLine($"[Registry] Verified values: TestMarker={val1}, LaunchCount={val2}");
 
-                    // Delete Value
                     Console.WriteLine("[Registry] Deleting value 'TestMarker'");
                     key.DeleteValue("TestMarker", throwOnMissingValue: false);
                 }
             }
 
-            // Delete SubKey
             Console.WriteLine($@"[Registry] Cleaning up test key HKCU\{subKeyName}");
             Registry.CurrentUser.DeleteSubKey(subKeyName, throwOnMissingSubKey: false);
             Console.WriteLine("[Registry] Registry operations completed.");

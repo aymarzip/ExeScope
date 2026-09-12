@@ -73,7 +73,7 @@ public sealed class PcapngWriter : IDisposable
             uint blockTotalLen = (uint)(32 + capLen + padding);
 
             long epochTicks = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
-            long deltaTicks = timestampUtc.Ticks - epochTicks;
+            long deltaTicks = Math.Max(0, timestampUtc.Ticks - epochTicks);
             ulong microSeconds = (ulong)(deltaTicks / 10);
 
             uint tsHigh = (uint)(microSeconds >> 32);
@@ -104,6 +104,19 @@ public sealed class PcapngWriter : IDisposable
             }
 
             Interlocked.Increment(ref _packetsWritten);
+        }
+    }
+
+    public void Flush()
+    {
+        lock (_lock)
+        {
+            if (_isDisposed)
+                return;
+
+            _writer.Flush();
+            _fileStream.Flush();
+            _unflushedPackets = 0;
         }
     }
 

@@ -50,4 +50,17 @@ public class PathSanitizerEdgeCasesTests
 
         Assert.True(PathSanitizer.ArePathsEquivalent(p1, p2));
     }
+
+    [Fact]
+    public void CreateSafeArtifactDestination_EnsuresStrictDirectoryContainment()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), "ArtifactsBase");
+        string dest = PathSanitizer.CreateSafeArtifactDestination(baseDir, 1, @"C:\target\sample.exe", "1234567890abcdef");
+
+        string fullBaseWithSep = Path.GetFullPath(baseDir);
+        if (!fullBaseWithSep.EndsWith(Path.DirectorySeparatorChar.ToString()))
+            fullBaseWithSep += Path.DirectorySeparatorChar;
+
+        Assert.StartsWith(fullBaseWithSep, dest, StringComparison.OrdinalIgnoreCase);
+    }
 }

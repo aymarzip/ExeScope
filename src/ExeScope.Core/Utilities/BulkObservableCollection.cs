@@ -47,12 +47,26 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
         _suppressNotification = true;
         try
         {
-            foreach (var item in list)
+            if (Items is List<T> innerList)
             {
-                Items.Add(item);
+                innerList.AddRange(list);
+                if (innerList.Count > _maxCapacity)
+                {
+                    int excess = innerList.Count - _maxCapacity;
+                    innerList.RemoveRange(0, excess);
+                }
             }
-
-            TrimExcess();
+            else
+            {
+                foreach (var item in list)
+                {
+                    Items.Add(item);
+                }
+                while (Items.Count > _maxCapacity)
+                {
+                    Items.RemoveAt(0);
+                }
+            }
         }
         finally
         {
@@ -75,12 +89,26 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
         _suppressNotification = true;
         try
         {
-            for (int i = list.Count - 1; i >= 0; i--)
+            if (Items is List<T> innerList)
             {
-                Items.Insert(0, list[i]);
+                innerList.InsertRange(0, list);
+                if (innerList.Count > _maxCapacity)
+                {
+                    int excess = innerList.Count - _maxCapacity;
+                    innerList.RemoveRange(_maxCapacity, excess);
+                }
             }
-
-            TrimExcess();
+            else
+            {
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    Items.Insert(0, list[i]);
+                }
+                while (Items.Count > _maxCapacity)
+                {
+                    Items.RemoveAt(Items.Count - 1);
+                }
+            }
         }
         finally
         {
@@ -90,13 +118,5 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
         OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
         OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
         OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
-    }
-
-    private void TrimExcess()
-    {
-        while (Items.Count > _maxCapacity)
-        {
-            Items.RemoveAt(Items.Count - 1);
-        }
     }
 }

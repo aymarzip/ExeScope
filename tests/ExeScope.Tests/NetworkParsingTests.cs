@@ -6,17 +6,26 @@ using Xunit;
 
 namespace ExeScope.Tests;
 
-public class NetworkParsingTests
+public class NetworkParsingTests : IDisposable
 {
     private readonly RawSocketCapture _capture;
+    private readonly PcapngWriter _pcap;
+    private readonly string _pcapPath;
 
     public NetworkParsingTests()
     {
         var targetInfo = new TargetExeInfo { OriginalPath = @"C:\dummy.exe", CanonicalPath = @"C:\dummy.exe", FileName = "dummy.exe" };
         var logger = new DiagnosticLogger();
         var correlation = new ProcessCorrelationEngine(targetInfo, logger);
-        var pcap = new PcapngWriter(Path.Combine(Path.GetTempPath(), $"dummy_{Guid.NewGuid():N}.pcapng"));
-        _capture = new RawSocketCapture(correlation, pcap, logger);
+        _pcapPath = Path.Combine(Path.GetTempPath(), $"dummy_{Guid.NewGuid():N}.pcapng");
+        _pcap = new PcapngWriter(_pcapPath);
+        _capture = new RawSocketCapture(correlation, _pcap, logger);
+    }
+
+    public void Dispose()
+    {
+        _pcap.Dispose();
+        try { if (File.Exists(_pcapPath)) File.Delete(_pcapPath); } catch { }
     }
 
     [Fact]

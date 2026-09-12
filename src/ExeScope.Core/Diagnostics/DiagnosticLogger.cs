@@ -72,23 +72,32 @@ public sealed class DiagnosticLogger : IDiagnosticLogger, IDisposable
     {
         var reader = _logChannel.Reader;
         var batch = new List<string>(64);
-        var lastFlush = DateTime.UtcNow;
 
-        while (await reader.WaitToReadAsync(_cts.Token).ConfigureAwait(false))
+        try
         {
-            while (reader.TryRead(out var line))
+            while (await reader.WaitToReadAsync(_cts.Token).ConfigureAwait(false))
             {
-                batch.Add(line);
-                if (batch.Count >= 64)
-                    break;
-            }
+                while (reader.TryRead(out var line))
+                {
+                    batch.Add(line);
+                    if (batch.Count >= 64)
+                        break;
+                }
 
-            if (batch.Count > 0 && _logFilePath != null)
-            {
-                await WriteBatchAsync(batch).ConfigureAwait(false);
-                batch.Clear();
-                lastFlush = DateTime.UtcNow;
+                if (batch.Count > 0 && _logFilePath != null)
+                {
+                    await WriteBatchAsync(batch).ConfigureAwait(false);
+                    batch.Clear();
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        while (reader.TryRead(out var line))
+        {
+            batch.Add(line);
         }
 
         if (batch.Count > 0 && _logFilePath != null)
@@ -119,7 +128,6 @@ public sealed class DiagnosticLogger : IDiagnosticLogger, IDisposable
         }
         catch
         {
-            // Best-effort diagnostics log persistence
         }
     }
 
@@ -136,14 +144,18 @@ public sealed class DiagnosticLogger : IDiagnosticLogger, IDisposable
 
         _isDisposed = true;
         _logChannel.Writer.TryComplete();
-        _cts.Cancel();
+
         try
         {
-            _writerTask.Wait(500);
+            if (!_writerTask.Wait(1500))
+            {
+                _cts.Cancel();
+            }
         }
         catch
         {
         }
+
         _cts.Dispose();
     }
 }

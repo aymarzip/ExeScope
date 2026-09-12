@@ -148,5 +148,21 @@ public class ProcessCorrelationTests
         Assert.Single(tree.Children);
         Assert.Equal(2002, tree.Children[0].ProcessId);
     }
+
+    [Fact]
+    public void BuildProcessTree_RootNodeContainsFullHierarchy()
+    {
+        var engine = new ProcessCorrelationEngine(_targetExe, _logger);
+        var t0 = DateTime.UtcNow;
+        engine.TryRegisterProcess(5001, 100, @"C:\Sandbox\sample.exe", "sample.exe", t0, out _);
+        engine.TryRegisterProcess(5002, 5001, @"C:\Sandbox\helper.exe", "helper.exe", t0.AddSeconds(1), out _);
+
+        var tree = engine.BuildProcessTree();
+        Assert.NotNull(tree);
+        Assert.Equal(5001, tree.ProcessId);
+        Assert.True(tree.IsRoot);
+        Assert.Single(tree.Children);
+        Assert.Equal(5002, tree.Children[0].ProcessId);
+    }
 }
 

@@ -464,6 +464,12 @@ public class EtwEventCollector : IEventCollector
 
             _kernelProcessingThread?.Join(1000);
             _userProcessingThread?.Join(1000);
+
+            _kernelSession?.Dispose();
+            _kernelSession = null;
+
+            _userSession?.Dispose();
+            _userSession = null;
         }
         catch (Exception ex)
         {
@@ -480,8 +486,5 @@ public class EtwEventCollector : IEventCollector
 
         _isDisposed = true;
         await StopAsync();
-
-        _kernelSession?.Dispose();
-        _userSession?.Dispose();
     }
 }

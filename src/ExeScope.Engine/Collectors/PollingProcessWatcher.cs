@@ -163,7 +163,8 @@ public class PollingProcessWatcher : IEventCollector
 
             if (!isBaseline)
             {
-                // Check if any previously tracked processes have exited
+                _knownSystemPids.IntersectWith(currentPids);
+
                 var trackedProcesses = _correlationEngine.GetAllTrackedProcesses();
                 foreach (var proc in trackedProcesses)
                 {

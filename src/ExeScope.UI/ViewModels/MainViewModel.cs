@@ -199,10 +199,24 @@ public class MainViewModel : ViewModelBase
         private set => SetProperty(ref _sessionSizeBytes, value);
     }
 
+    private IReadOnlyList<ProcessNode> _processTreeNodes = Array.Empty<ProcessNode>();
+
     public ProcessNode? ProcessTreeRoot
     {
         get => _processTreeRoot;
-        private set => SetProperty(ref _processTreeRoot, value);
+        private set
+        {
+            if (SetProperty(ref _processTreeRoot, value))
+            {
+                ProcessTreeNodes = value != null ? new[] { value } : Array.Empty<ProcessNode>();
+            }
+        }
+    }
+
+    public IReadOnlyList<ProcessNode> ProcessTreeNodes
+    {
+        get => _processTreeNodes;
+        private set => SetProperty(ref _processTreeNodes, value);
     }
 
     public string SearchText
