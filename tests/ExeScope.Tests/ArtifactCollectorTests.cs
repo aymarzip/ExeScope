@@ -101,4 +101,55 @@ public class ArtifactCollectorTests
             try { if (Directory.Exists(sessionDir)) Directory.Delete(sessionDir, true); } catch { }
         }
     }
+
+    [Fact]
+    public async Task ArtifactCollector_WithBypassDirectoryFilter_SavesFileOutsideMonitoredDirectories()
+    {
+        string sessionDir = Path.Combine(Path.GetTempPath(), $"ExeScope_Test_Session_{Guid.NewGuid():N}");
+        string customDir = Path.Combine(Path.GetTempPath(), $"ExeScope_Custom_{Guid.NewGuid():N}");
+        string sampleFile = Path.Combine(customDir, "injected_payload.dll");
+
+        try
+        {
+            Directory.CreateDirectory(sessionDir);
+            Directory.CreateDirectory(customDir);
+            await File.WriteAllTextAsync(sampleFile, "Simulated injected DLL content");
+
+            var config = new SessionConfig
+            {
+                EnableArtifactSaving = true,
+                MaxArtifactFileSizeBytes = 10 * 1024 * 1024,
+                MaxTotalArtifactStorageBytes = 50 * 1024 * 1024,
+                // Only monitor a dummy folder that does NOT include customDir
+                ArtifactMonitoredDirectories = new List<string> { Path.Combine(Path.GetTempPath(), "NonExistentDir") }
+            };
+
+            var logger = new DiagnosticLogger();
+            ArtifactRecord? savedRecord = null;
+
+            await using (var collector = new FileArtifactCollector(config, sessionDir, logger))
+            {
+                collector.ArtifactPreserved += r => savedRecord = r;
+                collector.Start();
+
+                // Queue with bypassDirectoryFilter = true
+                collector.QueueFile(sampleFile, 5678, "injector.exe", bypassDirectoryFilter: true);
+
+                await Task.Delay(500);
+
+                Assert.Equal(1, collector.TotalSaved);
+                Assert.NotNull(savedRecord);
+                Assert.Equal(ArtifactCopyStatus.Success, savedRecord.CopyStatus);
+
+                string artifactPath = Path.Combine(sessionDir, "artifacts", savedRecord.ArtifactFileName);
+                Assert.True(File.Exists(artifactPath));
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(sampleFile)) File.Delete(sampleFile); } catch { }
+            try { if (Directory.Exists(customDir)) Directory.Delete(customDir, true); } catch { }
+            try { if (Directory.Exists(sessionDir)) Directory.Delete(sessionDir, true); } catch { }
+        }
+    }
 }

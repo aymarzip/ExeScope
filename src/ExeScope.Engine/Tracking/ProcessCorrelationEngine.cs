@@ -165,8 +165,24 @@ public class ProcessCorrelationEngine
         }
     }
 
+    public bool TrackInjectionTargetEvents { get; set; } = true;
+
+    /// <summary>
+    /// Checks if a process belongs to the primary analyzed executable tree (root or spawned child).
+    /// Does NOT include external injection victims.
+    /// </summary>
+    public bool IsRootOrChildProcess(int pid, DateTime timestampUtc, out TrackedProcess? tracked)
+    {
+        lock (_sync)
+        {
+            tracked = FindTrackedProcess(pid, timestampUtc);
+            return tracked != null && !tracked.IsInjectionTarget;
+        }
+    }
+
     /// <summary>
     /// Checks whether an event occurring at timestampUtc associated with PID is from a tracked process.
+    /// If TrackInjectionTargetEvents is enabled, this includes confirmed injection targets.
     /// Correctly guards against Windows PID recycling.
     /// </summary>
     public bool IsProcessTracked(int pid, DateTime timestampUtc, out TrackedProcess? tracked)
@@ -174,7 +190,19 @@ public class ProcessCorrelationEngine
         lock (_sync)
         {
             tracked = FindTrackedProcess(pid, timestampUtc);
-            return tracked != null;
+            if (tracked != null)
+            {
+                if (!tracked.IsInjectionTarget)
+                    return true;
+                return TrackInjectionTargetEvents;
+            }
+
+            if (_injectionTargets.TryGetValue(pid, out tracked))
+            {
+                return TrackInjectionTargetEvents;
+            }
+
+            return false;
         }
     }
 
@@ -182,7 +210,8 @@ public class ProcessCorrelationEngine
     {
         lock (_sync)
         {
-            return _allProcesses.Any(p => p.IsAlive);
+            // Only consider the analyzed target executable and its spawned child processes
+            return _allProcesses.Any(p => !p.IsInjectionTarget && p.IsAlive);
         }
     }
 
@@ -201,6 +230,15 @@ public class ProcessCorrelationEngine
             if (_rootProcess == null)
                 return null;
 
+            // Ensure all injection targets are attached to the tree under their injector (or root)
+            foreach (var target in _injectionTargets.Values)
+            {
+                if (!IsDescendantOf(_rootProcess, target.ProcessId))
+                {
+                    AttachTargetToTree(target);
+                }
+            }
+
             return MapToNode(_rootProcess);
         }
     }
@@ -209,10 +247,10 @@ public class ProcessCorrelationEngine
     {
         lock (_sync)
         {
-            if (_injectionTargets.ContainsKey(pid))
+            if (_injectionTargets.TryGetValue(pid, out var existing))
             {
-                if (modulePath != null)
-                    _injectionTargets[pid].InjectedModules.Add(modulePath);
+                if (modulePath != null && !existing.InjectedModules.Contains(modulePath))
+                    existing.InjectedModules.Add(modulePath);
                 return;
             }
 
@@ -232,9 +270,39 @@ public class ProcessCorrelationEngine
             _injectionTargets[pid] = target;
             AddProcessInternal(target);
 
+            AttachTargetToTree(target);
+
             _logger.Info("ProcessCorrelation", $"Injection target registered: PID {pid} ({target.ImageName}), injected by PID {injectedByPid}");
             OnInjectionTargetRegistered?.Invoke(target);
         }
+    }
+
+    private void AttachTargetToTree(TrackedProcess target)
+    {
+        if (_rootProcess == null)
+            return;
+
+        var injector = target.InjectedByPid.HasValue
+            ? FindTrackedProcess(target.InjectedByPid.Value, target.StartTimeUtc)
+            : null;
+
+        var parent = (injector != null && !injector.IsInjectionTarget) ? injector : _rootProcess;
+        if (!parent.Children.Any(c => c.ProcessId == target.ProcessId && c.IsInjectionTarget))
+        {
+            parent.Children.Add(target);
+        }
+    }
+
+    private static bool IsDescendantOf(TrackedProcess parent, int targetPid)
+    {
+        foreach (var child in parent.Children)
+        {
+            if (child.ProcessId == targetPid)
+                return true;
+            if (IsDescendantOf(child, targetPid))
+                return true;
+        }
+        return false;
     }
 
     public bool IsInjectionTarget(int pid)

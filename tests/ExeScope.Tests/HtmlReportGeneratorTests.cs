@@ -1,6 +1,7 @@
 using ExeScope.Core.Diagnostics;
 using ExeScope.Core.Models;
 using ExeScope.Engine.Reporting;
+using ExeScope.Engine.Tracking;
 using Xunit;
 
 namespace ExeScope.Tests;
@@ -233,5 +234,63 @@ public class HtmlReportGeneratorTests
         Assert.Contains("&lt;iframe src=attacker.com&gt;", html);
         Assert.Contains("&lt;img src=x onerror=1&gt;", html);
         Assert.Contains("&lt;b&gt;danger&lt;/b&gt; &amp; &lt;alert&gt;", html);
+    }
+
+    [Fact]
+    public void GenerateReport_WithEngineGeneratedTree_RendersInjectionTargetBadges()
+    {
+        var targetExe = new TargetExeInfo
+        {
+            FileName = "cheat_loader.exe",
+            OriginalPath = @"C:\Cheats\cheat_loader.exe",
+            CanonicalPath = @"C:\Cheats\cheat_loader.exe",
+            Sha256 = "1111222233334444555566667777888899990000aaaaabbbbbcccccdddddeeeee",
+            SignatureStatus = "Unsigned"
+        };
+        var logger = new DiagnosticLogger();
+        var engine = new ProcessCorrelationEngine(targetExe, logger);
+
+        var t0 = DateTime.UtcNow;
+        engine.TryRegisterProcess(1000, 500, @"C:\Cheats\cheat_loader.exe", "cheat_loader.exe", t0, out _);
+        engine.RegisterInjectionTarget(5000, @"C:\Games\Minecraft\javaw.exe", 1000, @"C:\Cheats\hook.dll", t0.AddSeconds(1));
+
+        var processTree = engine.BuildProcessTree();
+        Assert.NotNull(processTree);
+
+        var metadata = new SessionMetadata
+        {
+            TargetExe = targetExe,
+            IsElevated = true,
+            TargetLaunchDetectedUtc = t0
+        };
+
+        var events = new List<AnalysisEvent>
+        {
+            new InjectionEvent
+            {
+                Technique = InjectionTechnique.DllInjection,
+                SourceProcessId = 1000,
+                SourceProcessImage = "cheat_loader.exe",
+                TargetProcessId = 5000,
+                TargetProcessImage = "javaw.exe",
+                InjectedModulePath = @"C:\Cheats\hook.dll",
+                Details = "Injected hook.dll into Minecraft JVM",
+                TimestampUtc = t0.AddSeconds(1)
+            }
+        };
+
+        string html = HtmlReportGenerator.GenerateReport(
+            metadata,
+            processTree,
+            events,
+            Array.Empty<ArtifactRecord>(),
+            Array.Empty<DiagnosticEntry>());
+
+        // Badges in process tree
+        Assert.Contains("INJECTION TARGET", html);
+        Assert.Contains("Injected Process (Target of DLL / Code Injection)", html);
+        Assert.Contains("Injected by PID: 1000", html);
+        Assert.Contains(@"C:\Cheats\hook.dll", html);
+        Assert.Contains("javaw.exe", html);
     }
 }

@@ -66,7 +66,7 @@ public class FileArtifactCollector : IAsyncDisposable
         _logger.Info("ArtifactCollector", $"Artifact collector initialized. Destination: {_artifactsDirectory}");
     }
 
-    public void QueueFile(string originalPath, int pid, string processImage)
+    public void QueueFile(string originalPath, int pid, string processImage, bool bypassDirectoryFilter = false)
     {
         if (!_config.EnableArtifactSaving || !_isRunning)
             return;
@@ -74,7 +74,7 @@ public class FileArtifactCollector : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(originalPath))
             return;
 
-        if (!PathSanitizer.IsPathWithinMonitoredDirectories(originalPath, _config.ArtifactMonitoredDirectories))
+        if (!bypassDirectoryFilter && !PathSanitizer.IsPathWithinMonitoredDirectories(originalPath, _config.ArtifactMonitoredDirectories))
             return;
 
         _queue.TryAdd(new ArtifactTask(originalPath, pid, processImage));

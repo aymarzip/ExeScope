@@ -255,4 +255,77 @@ public class InjectionDetectorTests
 
         detector.Dispose();
     }
+
+    [Fact]
+    public void SubsequentModuleLoadInConfirmedTarget_WithTrackTargetEventsTrue_Detected()
+    {
+        var engine = CreateEngineWithRoot(out int rootPid);
+        var detector = new InjectionDetector(engine, _logger, trackTargetEvents: true);
+
+        var events = new List<InjectionEvent>();
+        detector.InjectionDetected += evt => events.Add(evt);
+
+        var t0 = DateTime.UtcNow;
+        string dllPath = @"C:\Temp\payload.dll";
+
+        detector.OnFileWriteByTrackedProcess(rootPid, dllPath, t0);
+        detector.OnImageLoadInAnyProcess(5000, dllPath, 0x7FF00000, 65536, t0.AddMilliseconds(100));
+
+        // When target is tracked, subsequent module load should still be detected
+        detector.OnImageLoadInAnyProcess(5000, @"C:\Temp\second_payload.dll", 0x7FF20000, 32768, t0.AddSeconds(2));
+
+        Assert.Equal(2, events.Count);
+        Assert.Equal(InjectionTechnique.DllInjection, events[0].Technique);
+        Assert.Equal(InjectionTechnique.Unknown, events[1].Technique);
+
+        detector.Dispose();
+    }
+
+    [Fact]
+    public void ImageLoad_WithShortPathAndLongPathAliases_CorrelatedSuccessfully()
+    {
+        var engine = CreateEngineWithRoot(out int rootPid);
+        var detector = new InjectionDetector(engine, _logger, trackTargetEvents: true);
+
+        var events = new List<InjectionEvent>();
+        detector.InjectionDetected += evt => events.Add(evt);
+
+        var t0 = DateTime.UtcNow;
+        string shortWritePath = @"C:\Users\AYMAR~1\AppData\Local\Temp\payload.dll";
+        string longLoadPath = @"C:\Users\aymar\AppData\Local\Temp\payload.dll";
+
+        detector.OnFileWriteByTrackedProcess(rootPid, shortWritePath, t0);
+        detector.OnImageLoadInAnyProcess(5000, longLoadPath, 0x7FF00000, 65536, t0.AddMilliseconds(150));
+
+        Assert.Single(events);
+        Assert.Equal(InjectionTechnique.DllInjection, events[0].Technique);
+        Assert.Equal(5000, events[0].TargetProcessId);
+
+        detector.Dispose();
+    }
+
+    [Fact]
+    public void RemoteThreadInConfirmedTarget_Detected()
+    {
+        var engine = CreateEngineWithRoot(out int rootPid);
+        var detector = new InjectionDetector(engine, _logger, trackTargetEvents: true);
+
+        var events = new List<InjectionEvent>();
+        detector.InjectionDetected += evt => events.Add(evt);
+
+        var t0 = DateTime.UtcNow;
+        string dllPath = @"C:\Temp\payload.dll";
+
+        detector.OnFileWriteByTrackedProcess(rootPid, dllPath, t0);
+        detector.OnImageLoadInAnyProcess(5000, dllPath, 0x7FF00000, 65536, t0.AddMilliseconds(100));
+
+        // Start thread in confirmed victim
+        detector.OnThreadStartInExternalProcess(5000, 0x00007FFB12340000, t0.AddSeconds(1));
+
+        Assert.Equal(2, events.Count);
+        Assert.Equal(InjectionTechnique.DllInjection, events[0].Technique);
+        Assert.Equal(InjectionTechnique.ManualMapping, events[1].Technique);
+
+        detector.Dispose();
+    }
 }

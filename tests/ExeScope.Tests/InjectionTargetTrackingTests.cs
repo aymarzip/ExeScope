@@ -124,4 +124,81 @@ public class InjectionTargetTrackingTests
         var targets = engine.GetInjectionTargets();
         Assert.Empty(targets[0].InjectedModules);
     }
+
+    [Fact]
+    public void BuildProcessTree_WithRegisteredInjectionTarget_IncludesTargetInTree()
+    {
+        var engine = new ProcessCorrelationEngine(_targetExe, _logger);
+        engine.TryRegisterProcess(1001, 500, @"C:\Sandbox\sample.exe", "sample.exe", DateTime.UtcNow, out _);
+        engine.RegisterInjectionTarget(5000, @"C:\Java\javaw.exe", 1001, @"C:\Temp\cheat.dll", DateTime.UtcNow);
+
+        var tree = engine.BuildProcessTree();
+        Assert.NotNull(tree);
+        Assert.Single(tree.Children);
+        var targetNode = tree.Children[0];
+        Assert.Equal(5000, targetNode.ProcessId);
+        Assert.True(targetNode.IsInjectionTarget);
+        Assert.Equal(1001, targetNode.InjectedByPid);
+        Assert.Contains(@"C:\Temp\cheat.dll", targetNode.InjectedModules);
+    }
+
+    [Fact]
+    public void BuildProcessTree_WithChildProcessAsInjector_AttachesTargetUnderChild()
+    {
+        var engine = new ProcessCorrelationEngine(_targetExe, _logger);
+        var t0 = DateTime.UtcNow;
+        engine.TryRegisterProcess(1001, 500, @"C:\Sandbox\sample.exe", "sample.exe", t0, out _);
+        engine.TryRegisterProcess(2002, 1001, @"C:\Sandbox\loader.exe", "loader.exe", t0.AddSeconds(1), out _);
+
+        engine.RegisterInjectionTarget(5000, @"C:\Java\javaw.exe", 2002, @"C:\Temp\cheat.dll", t0.AddSeconds(2));
+
+        var tree = engine.BuildProcessTree();
+        Assert.NotNull(tree);
+        Assert.Single(tree.Children);
+        var childNode = tree.Children[0];
+        Assert.Equal(2002, childNode.ProcessId);
+        Assert.Single(childNode.Children);
+        var targetNode = childNode.Children[0];
+        Assert.Equal(5000, targetNode.ProcessId);
+        Assert.True(targetNode.IsInjectionTarget);
+        Assert.Equal(2002, targetNode.InjectedByPid);
+    }
+
+    [Fact]
+    public void HasActiveTrackedProcesses_WithInjectionTargetRunning_ReturnsFalseWhenRootExits()
+    {
+        var engine = new ProcessCorrelationEngine(_targetExe, _logger);
+        var t0 = DateTime.UtcNow;
+        engine.TryRegisterProcess(1001, 500, @"C:\Sandbox\sample.exe", "sample.exe", t0, out _);
+        engine.RegisterInjectionTarget(5000, @"C:\Java\javaw.exe", 1001, @"C:\Temp\cheat.dll", t0.AddSeconds(1));
+
+        Assert.True(engine.HasActiveTrackedProcesses());
+
+        // Root process exits
+        engine.RegisterProcessExit(1001, t0.AddSeconds(5), 0);
+
+        // Injection target (victim) is still running in background, but tracked analyzed processes exited
+        Assert.False(engine.HasActiveTrackedProcesses());
+    }
+
+    [Fact]
+    public void IsProcessTracked_RespectsTrackInjectionTargetEventsFlag()
+    {
+        var engine = new ProcessCorrelationEngine(_targetExe, _logger) { TrackInjectionTargetEvents = true };
+        var t0 = DateTime.UtcNow;
+        engine.TryRegisterProcess(1001, 500, @"C:\Sandbox\sample.exe", "sample.exe", t0, out _);
+        engine.RegisterInjectionTarget(5000, @"C:\Java\javaw.exe", 1001, null, t0);
+
+        // When enabled, victim process events are tracked
+        Assert.True(engine.IsProcessTracked(5000, t0, out var tracked1));
+        Assert.NotNull(tracked1);
+        Assert.True(tracked1.IsInjectionTarget);
+
+        // When disabled, victim process events are ignored
+        engine.TrackInjectionTargetEvents = false;
+        Assert.False(engine.IsProcessTracked(5000, t0, out _));
+
+        // Primary root process is always tracked regardless
+        Assert.True(engine.IsProcessTracked(1001, t0, out _));
+    }
 }

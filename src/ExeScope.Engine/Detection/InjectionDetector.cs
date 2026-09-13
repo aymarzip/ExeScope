@@ -46,12 +46,50 @@ public class InjectionDetector : IDisposable
         if (!IsDllOrExecutable(filePath))
             return;
 
-        _recentDllWrites[filePath] = new DllWriteRecord
+        string canonical = ExeScope.Core.Utilities.PathSanitizer.NormalizeCanonicalPath(filePath);
+        _recentDllWrites[canonical] = new DllWriteRecord
         {
             WriterPid = pid,
-            FilePath = filePath,
+            FilePath = canonical,
             TimestampUtc = timestampUtc
         };
+
+        if (!string.Equals(canonical, filePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _recentDllWrites[filePath] = new DllWriteRecord
+            {
+                WriterPid = pid,
+                FilePath = filePath,
+                TimestampUtc = timestampUtc
+            };
+        }
+    }
+
+    private bool TryFindRecentWrite(string modulePath, out DllWriteRecord? record)
+    {
+        string canonical = ExeScope.Core.Utilities.PathSanitizer.NormalizeCanonicalPath(modulePath);
+        if (_recentDllWrites.TryGetValue(canonical, out record))
+            return true;
+
+        if (_recentDllWrites.TryGetValue(modulePath, out record))
+            return true;
+
+        // Check if matching by filename for non-system modules (e.g. 8.3 short name alias)
+        string fileName = Path.GetFileName(modulePath);
+        if (!string.IsNullOrEmpty(fileName))
+        {
+            foreach (var kvp in _recentDllWrites)
+            {
+                if (string.Equals(Path.GetFileName(kvp.Key), fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    record = kvp.Value;
+                    return true;
+                }
+            }
+        }
+
+        record = null;
+        return false;
     }
 
     public void OnImageLoadInAnyProcess(int pid, string modulePath, ulong baseAddress, uint size, DateTime timestampUtc)
@@ -59,13 +97,13 @@ public class InjectionDetector : IDisposable
         if (string.IsNullOrWhiteSpace(modulePath))
             return;
 
-        if (_correlationEngine.IsProcessTracked(pid, timestampUtc, out _))
+        if (_correlationEngine.IsRootOrChildProcess(pid, timestampUtc, out _))
             return;
 
         if (IsSystemModule(modulePath))
             return;
 
-        if (_recentDllWrites.TryGetValue(modulePath, out var writeRecord))
+        if (TryFindRecentWrite(modulePath, out var writeRecord) && writeRecord != null)
         {
             var timeDiff = timestampUtc - writeRecord.TimestampUtc;
             if (timeDiff >= TimeSpan.Zero && timeDiff <= CorrelationWindow)
@@ -89,6 +127,7 @@ public class InjectionDetector : IDisposable
                         pid, targetImage, writeRecord.WriterPid, modulePath, timestampUtc);
                 }
 
+                _recentDllWrites.TryRemove(writeRecord.FilePath, out _);
                 _recentDllWrites.TryRemove(modulePath, out _);
                 EmitInjection(evt);
                 return;
@@ -114,7 +153,7 @@ public class InjectionDetector : IDisposable
 
     public void OnThreadStartInExternalProcess(int targetPid, ulong startAddress, DateTime timestampUtc)
     {
-        if (_correlationEngine.IsProcessTracked(targetPid, timestampUtc, out _))
+        if (_correlationEngine.IsRootOrChildProcess(targetPid, timestampUtc, out _))
             return;
 
         _suspiciousThreads[targetPid] = new RemoteThreadRecord
@@ -171,7 +210,7 @@ public class InjectionDetector : IDisposable
         if (!_correlationEngine.IsProcessTracked(sourcePid, timestampUtc, out _))
             return;
 
-        if (_correlationEngine.IsProcessTracked(targetPid, timestampUtc, out _))
+        if (_correlationEngine.IsRootOrChildProcess(targetPid, timestampUtc, out _))
             return;
 
         string targetImage = TryGetProcessImage(targetPid);
@@ -237,7 +276,14 @@ public class InjectionDetector : IDisposable
 
     private static bool IsSystemModule(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            return true;
+
         var normalized = path.Replace('/', '\\');
+
+        string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        if (!string.IsNullOrEmpty(winDir) && normalized.StartsWith(winDir, StringComparison.OrdinalIgnoreCase))
+            return true;
 
         if (normalized.StartsWith(@"C:\Windows\", StringComparison.OrdinalIgnoreCase))
             return true;
@@ -246,6 +292,8 @@ public class InjectionDetector : IDisposable
         if (normalized.Contains(@"\Microsoft.NET\", StringComparison.OrdinalIgnoreCase))
             return true;
         if (normalized.Contains(@"\WinSxS\", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.Contains(@"\dotnet\shared\", StringComparison.OrdinalIgnoreCase))
             return true;
 
         return false;

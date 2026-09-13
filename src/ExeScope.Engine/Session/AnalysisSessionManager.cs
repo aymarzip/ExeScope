@@ -120,7 +120,10 @@ public class AnalysisSessionManager : IAsyncDisposable
         _logger.Info("SessionManager", "Pre-activating telemetry sources before target execution.");
         _sessionCts = new CancellationTokenSource();
 
-        _correlationEngine = new ProcessCorrelationEngine(_targetExe, _logger);
+        _correlationEngine = new ProcessCorrelationEngine(_targetExe, _logger)
+        {
+            TrackInjectionTargetEvents = _config.TrackInjectionTargetEvents
+        };
         _correlationEngine.OnProcessStarted += HandleProcessStarted;
         _correlationEngine.OnProcessTerminated += HandleProcessTerminated;
         _correlationEngine.OnRepeatedLaunchDetected += HandleRepeatedLaunchDetected;
@@ -178,7 +181,10 @@ public class AnalysisSessionManager : IAsyncDisposable
         _inMemoryEvents.Add(evt);
         EventRecorded?.Invoke(evt);
 
-        _artifactCollector?.QueueFile(evt.InjectedModulePath ?? "", evt.SourceProcessId, evt.SourceProcessImage ?? "");
+        if (!string.IsNullOrEmpty(evt.InjectedModulePath))
+        {
+            _artifactCollector?.QueueFile(evt.InjectedModulePath, evt.SourceProcessId, evt.SourceProcessImage ?? "", bypassDirectoryFilter: true);
+        }
 
         var tree = _correlationEngine?.BuildProcessTree();
         if (tree != null) ProcessTreeUpdated?.Invoke(tree);
