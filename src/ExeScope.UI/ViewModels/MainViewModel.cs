@@ -44,6 +44,8 @@ public class MainViewModel : ViewModelBase
     private int _maxArtifactSizeMb = 10;
     private int _maxTotalStorageMb = 100;
     private bool _enablePacketCapture = false;
+    private bool _enableInjectionTracking = true;
+    private bool _trackInjectionTargetEvents = true;
 
     private long _totalEventsCount;
     private long _droppedEventsCount;
@@ -62,6 +64,7 @@ public class MainViewModel : ViewModelBase
     public BulkObservableCollection<FileEvent> FileEvents { get; } = new(20_000);
     public BulkObservableCollection<RegistryEvent> RegistryEvents { get; } = new(20_000);
     public BulkObservableCollection<NetworkEvent> NetworkEvents { get; } = new(20_000);
+    public BulkObservableCollection<InjectionEvent> InjectionEvents { get; } = new(5_000);
     public BulkObservableCollection<ArtifactRecord> Artifacts { get; } = new(10_000);
     public BulkObservableCollection<DiagnosticEntry> Diagnostics { get; } = new(5_000);
 
@@ -69,6 +72,7 @@ public class MainViewModel : ViewModelBase
     public ICollectionView FilteredFileEvents { get; }
     public ICollectionView FilteredRegistryEvents { get; }
     public ICollectionView FilteredNetworkEvents { get; }
+    public ICollectionView FilteredInjectionEvents { get; }
 
     public IReadOnlyList<string> CategoryOptions { get; } = new[]
     {
@@ -76,7 +80,8 @@ public class MainViewModel : ViewModelBase
         "Процессы",
         "Файлы",
         "Реестр",
-        "Сеть"
+        "Сеть",
+        "Инъекции"
     };
 
     public string TargetExePath
@@ -179,6 +184,24 @@ public class MainViewModel : ViewModelBase
             }
             SetProperty(ref _enablePacketCapture, value);
         }
+    }
+
+    public bool EnableInjectionTracking
+    {
+        get => _enableInjectionTracking;
+        set
+        {
+            if (SetProperty(ref _enableInjectionTracking, value))
+            {
+                if (!value) TrackInjectionTargetEvents = false;
+            }
+        }
+    }
+
+    public bool TrackInjectionTargetEvents
+    {
+        get => _trackInjectionTargetEvents;
+        set => SetProperty(ref _trackInjectionTargetEvents, value);
     }
 
     public long TotalEventsCount
@@ -302,6 +325,8 @@ public class MainViewModel : ViewModelBase
         FilteredNetworkEvents = CollectionViewSource.GetDefaultView(NetworkEvents);
         FilteredNetworkEvents.Filter = FilterNetworkEventPredicate;
 
+        FilteredInjectionEvents = CollectionViewSource.GetDefaultView(InjectionEvents);
+
         BrowseExeCommand = new RelayCommand(ExecuteBrowseExe);
         BrowseOutputDirCommand = new RelayCommand(ExecuteBrowseOutputDir);
         StartWaitingCommand = new AsyncRelayCommand(ExecuteStartWaitingAsync, () => CanStartWaiting);
@@ -376,6 +401,7 @@ public class MainViewModel : ViewModelBase
                 var fileBatch = new List<FileEvent>();
                 var regBatch = new List<RegistryEvent>();
                 var netBatch = new List<NetworkEvent>();
+                var injBatch = new List<InjectionEvent>();
 
                 for (int i = 0; i < eventBatch.Count; i++)
                 {
@@ -383,11 +409,13 @@ public class MainViewModel : ViewModelBase
                     if (item is FileEvent fe) fileBatch.Add(fe);
                     else if (item is RegistryEvent re) regBatch.Add(re);
                     else if (item is NetworkEvent ne) netBatch.Add(ne);
+                    else if (item is InjectionEvent injEvt) injBatch.Add(injEvt);
                 }
 
                 if (fileBatch.Count > 0) FileEvents.PrependRange(fileBatch);
                 if (regBatch.Count > 0) RegistryEvents.PrependRange(regBatch);
                 if (netBatch.Count > 0) NetworkEvents.PrependRange(netBatch);
+                if (injBatch.Count > 0) InjectionEvents.PrependRange(injBatch);
             }
         }
 
@@ -438,6 +466,7 @@ public class MainViewModel : ViewModelBase
             "Файлы" => EventCategory.File,
             "Реестр" => EventCategory.Registry,
             "Сеть" => EventCategory.Network,
+            "Инъекции" => EventCategory.Injection,
             _ => null
         };
     }
@@ -448,6 +477,7 @@ public class MainViewModel : ViewModelBase
         FilteredFileEvents.Refresh();
         FilteredRegistryEvents.Refresh();
         FilteredNetworkEvents.Refresh();
+        FilteredInjectionEvents.Refresh();
     }
 
     private void ExecuteClearFilter()
@@ -521,6 +551,7 @@ public class MainViewModel : ViewModelBase
             FileEvents.Clear();
             RegistryEvents.Clear();
             NetworkEvents.Clear();
+            InjectionEvents.Clear();
             Artifacts.Clear();
             TargetIntegrityWarning = null;
             ProcessTreeRoot = null;
@@ -536,7 +567,9 @@ public class MainViewModel : ViewModelBase
                 EnableArtifactSaving = EnableArtifactSaving,
                 MaxArtifactFileSizeBytes = (long)MaxArtifactSizeMb * 1024 * 1024,
                 MaxTotalArtifactStorageBytes = (long)MaxTotalStorageMb * 1024 * 1024,
-                EnablePacketCapture = EnablePacketCapture
+                EnablePacketCapture = EnablePacketCapture,
+                EnableInjectionTracking = EnableInjectionTracking,
+                TrackInjectionTargetEvents = TrackInjectionTargetEvents
             };
 
             _sessionManager.UpdateConfig(config);

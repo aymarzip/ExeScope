@@ -20,9 +20,15 @@ public class ProcessNode
 
     public bool IsRoot { get; set; }
 
+    public bool IsInjectionTarget { get; set; }
+
+    public int? InjectedByPid { get; set; }
+
     public bool IsAlive => !ExitTimeUtc.HasValue;
 
     public List<ProcessNode> Children { get; set; } = new();
 
     public List<string> LoadedModules { get; set; } = new();
+
+    public List<string> InjectedModules { get; set; } = new();
 }

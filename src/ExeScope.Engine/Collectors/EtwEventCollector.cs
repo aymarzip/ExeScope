@@ -1,6 +1,7 @@
 using System.Security.Principal;
 using ExeScope.Core.Diagnostics;
 using ExeScope.Core.Models;
+using ExeScope.Engine.Detection;
 using ExeScope.Engine.Tracking;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Parsers;
@@ -13,6 +14,7 @@ public class EtwEventCollector : IEventCollector
     private readonly ProcessCorrelationEngine _correlationEngine;
     private readonly IDiagnosticLogger _logger;
     private readonly Action<string, int, string>? _onFileModifiedForArtifact;
+    private readonly InjectionDetector? _injectionDetector;
 
     private TraceEventSession? _kernelSession;
     private TraceEventSession? _userSession;
@@ -33,11 +35,13 @@ public class EtwEventCollector : IEventCollector
     public EtwEventCollector(
         ProcessCorrelationEngine correlationEngine,
         IDiagnosticLogger logger,
-        Action<string, int, string>? onFileModifiedForArtifact = null)
+        Action<string, int, string>? onFileModifiedForArtifact = null,
+        InjectionDetector? injectionDetector = null)
     {
         _correlationEngine = correlationEngine;
         _logger = logger;
         _onFileModifiedForArtifact = onFileModifiedForArtifact;
+        _injectionDetector = injectionDetector;
 
         CheckPrivileges();
     }
@@ -98,6 +102,8 @@ public class EtwEventCollector : IEventCollector
             };
 
             var kernelKeywords = KernelTraceEventParser.Keywords.Process
+                                 | KernelTraceEventParser.Keywords.ImageLoad
+                                 | KernelTraceEventParser.Keywords.Thread
                                  | KernelTraceEventParser.Keywords.FileIO
                                  | KernelTraceEventParser.Keywords.FileIOInit
                                  | KernelTraceEventParser.Keywords.Registry
@@ -315,6 +321,45 @@ public class EtwEventCollector : IEventCollector
                 data.daddr?.ToString() ?? "0.0.0.0", data.dport,
                 data.saddr?.ToString() ?? "0.0.0.0", data.sport, data.size);
         };
+
+        kernel.ImageLoad += data =>
+        {
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            string fileName = data.FileName ?? string.Empty;
+            ulong imageBase = (ulong)data.ImageBase;
+            uint imageSize = (uint)data.ImageSize;
+
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                _correlationEngine.RegisterModuleLoaded(pid, fileName, utcTime);
+
+                var evt = new ProcessEvent
+                {
+                    EventId = Interlocked.Increment(ref _nextEventId),
+                    TimestampUtc = utcTime,
+                    ProcessId = pid,
+                    ProcessImage = tracked?.ImageName ?? string.Empty,
+                    EventType = ProcessEventType.ModuleLoaded,
+                    ModulePath = fileName,
+                    ModuleBaseAddress = imageBase,
+                    ModuleSize = imageSize,
+                    Summary = $"Module loaded: {Path.GetFileName(fileName)} (Base: 0x{imageBase:X}, Size: {imageSize})"
+                };
+                Emit(evt);
+            }
+
+            _injectionDetector?.OnImageLoadInAnyProcess(pid, fileName, imageBase, imageSize, utcTime);
+        };
+
+        kernel.ThreadStart += data =>
+        {
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            ulong startAddr = (ulong)data.Win32StartAddr;
+
+            _injectionDetector?.OnThreadStartInExternalProcess(pid, startAddr, utcTime);
+        };
     }
 
     private void HandleDynamicUserEvent(TraceEvent data)
@@ -379,6 +424,7 @@ public class EtwEventCollector : IEventCollector
             if (op is FileOperationType.Create or FileOperationType.Write or FileOperationType.Rename)
             {
                 _onFileModifiedForArtifact?.Invoke(fileName, pid, tracked?.ImageName ?? string.Empty);
+                _injectionDetector?.OnFileWriteByTrackedProcess(pid, fileName, utcTime);
             }
         }
     }

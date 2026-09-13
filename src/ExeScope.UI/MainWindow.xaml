@@ -23,6 +23,7 @@
         <conv:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
         <conv:ProcessStatusConverter x:Key="ProcessStatusConverter" />
         <conv:ProcessStatusColorConverter x:Key="ProcessStatusColorConverter" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
@@ -225,7 +226,9 @@
                 <!-- Checkboxes for options -->
                 <StackPanel Grid.Column="11" Orientation="Horizontal" VerticalAlignment="Center">
                     <CheckBox Content="Сохранять артефакты" IsChecked="{Binding EnableArtifactSaving}" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
-                    <CheckBox Content="Захват пакетов (PCAPNG)" IsChecked="{Binding EnablePacketCapture}" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+                    <CheckBox Content="Захват пакетов (PCAPNG)" IsChecked="{Binding EnablePacketCapture}" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+                    <CheckBox Content="Детекция инъекций" IsChecked="{Binding EnableInjectionTracking}" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
+                    <CheckBox Content="Отслеживать цели инъекций" IsChecked="{Binding TrackInjectionTargetEvents}" IsEnabled="{Binding EnableInjectionTracking}" Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -357,7 +360,21 @@
                                                        Visibility="{Binding ExitCode, Converter={StaticResource NullToVisibilityConverter}}" Foreground="{StaticResource TextMutedBrush}" Margin="4,0,0,0" />
                                         </StackPanel>
                                         <TextBlock Text="{Binding ImagePath}" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,2" />
-                                        <TextBlock Text="{Binding CommandLine}" FontFamily="Consolas" FontSize="11" Foreground="#7ee787" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding CommandLine}" FontFamily="Consolas" FontSize="11" Foreground="#7ee787" TextWrapping="Wrap" Margin="0,0,0,4" />
+                                        <TextBlock Text="[INJECTION TARGET]" Foreground="#ff7b72" FontWeight="Bold" FontSize="11" Margin="0,0,0,2"
+                                                   Visibility="{Binding IsInjectionTarget, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <TextBlock Text="{Binding InjectedByPid, StringFormat='Инжектирован процессом PID: {0}'}" Foreground="#ff7b72" FontSize="11" Margin="0,0,0,2"
+                                                   Visibility="{Binding IsInjectionTarget, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ItemsControl ItemsSource="{Binding InjectedModules}" Margin="0,2,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="💉 " FontSize="10" Foreground="#d29922" />
+                                                        <TextBlock Text="{Binding}" FontSize="10" Foreground="#d29922" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </Border>
                             </HierarchicalDataTemplate>
@@ -412,6 +429,23 @@
                         <DataGridTextColumn Header="Уверенность" Binding="{Binding Confidence}" Width="90" />
                         <DataGridTextColumn Header="Объём (байт)" Binding="{Binding BytesTransferred}" Width="90" />
                         <DataGridTextColumn Header="Защита / TLS" Binding="{Binding SecurityNotes}" Width="160" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+
+            <!-- TAB 5.5: Инъекции -->
+            <TabItem Header="Инъекции">
+                <DataGrid ItemsSource="{Binding FilteredInjectionEvents}" AutoGenerateColumns="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Время (UTC)" Binding="{Binding TimestampUtc, StringFormat={}{0:HH:mm:ss.fff}}" FontFamily="Consolas" Width="105" />
+                        <DataGridTextColumn Header="Техника" Binding="{Binding Technique}" FontWeight="SemiBold" Width="120" />
+                        <DataGridTextColumn Header="Источник PID" Binding="{Binding SourceProcessId}" FontFamily="Consolas" Width="95" />
+                        <DataGridTextColumn Header="Источник" Binding="{Binding SourceProcessImage}" Width="130" />
+                        <DataGridTextColumn Header="Цель PID" Binding="{Binding TargetProcessId}" FontFamily="Consolas" Width="75" />
+                        <DataGridTextColumn Header="Цель" Binding="{Binding TargetProcessImage}" Width="130" />
+                        <DataGridTextColumn Header="Модуль" Binding="{Binding InjectedModulePath}" Width="200" />
+                        <DataGridTextColumn Header="Детали" Binding="{Binding Details}" Width="*" />
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>

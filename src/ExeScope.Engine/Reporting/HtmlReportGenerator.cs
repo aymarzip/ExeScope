@@ -25,6 +25,8 @@ public class HtmlReportGenerator
         string startTime = metadata.TargetLaunchDetectedUtc?.ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "N/A";
         string endTime = metadata.RecordingEndedUtc?.ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "N/A";
 
+        var injectionEvents = events.OfType<InjectionEvent>().ToList();
+
         sb.Append($@"<!DOCTYPE html>
 <html lang=""en"">
 <head>
@@ -203,6 +205,11 @@ public class HtmlReportGenerator
             ⚠ WARNING: Target executable on disk changed after initial selection! {Escape(metadata.TargetModifiedWarning ?? "")}
         </div>" : "")}
 
+        {(injectionEvents.Count > 0 ? $@"
+        <div class=""warning-banner"" style=""margin-top: 16px;"">
+            ⚠ ОБНАРУЖЕНЫ ИНЪЕКЦИИ (INJECTIONS DETECTED): Зафиксировано событий инъекций: {injectionEvents.Count}. Обнаружено внедрение кода/DLL во внешние процессы!
+        </div>" : "")}
+
         <div class=""grid-summary"">
             <div class=""stat-card"">
                 <div class=""label"">Target File</div>
@@ -215,6 +222,10 @@ public class HtmlReportGenerator
             <div class=""stat-card"">
                 <div class=""label"">SHA-256</div>
                 <div class=""value mono"" style=""font-size: 13px;"">{exeHash}</div>
+            </div>
+            <div class=""stat-card"">
+                <div class=""label"">Injections / Инъекции</div>
+                <div class=""value mono"" {(injectionEvents.Count > 0 ? "style=\"color: var(--accent-red);\"" : "")}>{injectionEvents.Count}</div>
             </div>
             <div class=""stat-card"">
                 <div class=""label"">Target Launch (UTC)</div>
@@ -233,6 +244,7 @@ public class HtmlReportGenerator
 
     <div class=""tabs"">
         <button class=""tab-btn active"" onclick=""showTab('tab-tree', this)"">Process Tree</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-injections', this)"">Обнаруженные инъекции ({injectionEvents.Count})</button>
         <button class=""tab-btn"" onclick=""showTab('tab-files', this)"">File Events ({events.Count(e => e.Category == EventCategory.File)})</button>
         <button class=""tab-btn"" onclick=""showTab('tab-registry', this)"">Registry Events ({events.Count(e => e.Category == EventCategory.Registry)})</button>
         <button class=""tab-btn"" onclick=""showTab('tab-network', this)"">Network Events ({events.Count(e => e.Category == EventCategory.Network)})</button>
@@ -253,6 +265,53 @@ public class HtmlReportGenerator
         }
 
         sb.Append(@"
+    </div>
+
+    <!-- Injections Tab -->
+    <div id=""tab-injections"" class=""tab-panel"">
+        <input type=""text"" class=""search-box"" placeholder=""Search injection techniques, processes, or modules..."" onkeyup=""filterTable('inj-table', this.value)"">");
+
+        if (injectionEvents.Count > maxTableRows)
+        {
+            sb.Append($@"<div class=""info-banner"">Showing first {maxTableRows.ToString("N0", CultureInfo.InvariantCulture)} of {injectionEvents.Count.ToString("N0", CultureInfo.InvariantCulture)} injection events. The full dataset is saved in events.jsonl.</div>");
+        }
+
+        sb.Append(@"
+        <table id=""inj-table"">
+            <thead>
+                <tr>
+                    <th>Time (UTC)</th>
+                    <th>Technique</th>
+                    <th>Source Process</th>
+                    <th>Target Process</th>
+                    <th>Injected Module</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>");
+
+        int renderedInj = 0;
+        foreach (var ie in injectionEvents)
+        {
+            if (++renderedInj > maxTableRows) break;
+            string src = $"{Escape(ie.SourceProcessImage ?? "Unknown")} ({ie.SourceProcessId})";
+            string tgt = $"{Escape(ie.TargetProcessImage ?? "Unknown")} ({ie.TargetProcessId})";
+            string module = string.IsNullOrEmpty(ie.InjectedModulePath) ? "-" : Escape(ie.InjectedModulePath);
+            string details = Escape(ie.Details ?? "");
+            sb.Append($@"
+                <tr>
+                    <td class=""mono"">{ie.TimestampUtc:HH:mm:ss.fff}</td>
+                    <td><span class=""badge badge-danger"">{ie.Technique}</span></td>
+                    <td class=""mono"">{src}</td>
+                    <td class=""mono"">{tgt}</td>
+                    <td class=""mono"">{module}</td>
+                    <td>{details}</td>
+                </tr>");
+        }
+
+        sb.Append(@"
+            </tbody>
+        </table>
     </div>
 
     <!-- File Events Tab -->
@@ -508,10 +567,15 @@ public class HtmlReportGenerator
 
     private static void RenderProcessNodeHtml(StringBuilder sb, ProcessNode node)
     {
+        string borderStyle = node.IsInjectionTarget ? " style=\"border-left: 4px solid var(--accent-red);\"" : "";
+
         sb.Append($@"
-        <div class=""tree-node"">
-            <div style=""display: flex; justify-content: space-between;"">
-                <strong>{Escape(node.ImageName)}</strong>
+        <div class=""tree-node""{borderStyle}>
+            <div style=""display: flex; justify-content: space-between; align-items: center;"">
+                <div>
+                    <strong>{Escape(node.ImageName)}</strong>" +
+                    (node.IsInjectionTarget ? @" <span class=""badge badge-danger"" style=""font-size: 10px; margin-left: 6px;"">INJECTION TARGET</span>" : "") + @"
+                </div>
                 <span class=""mono"">PID: {node.ProcessId} | Parent: {node.ParentProcessId}</span>
             </div>
             <div style=""font-size: 12px; color: var(--text-muted); margin-top: 4px;"" class=""mono"">
@@ -520,6 +584,18 @@ public class HtmlReportGenerator
                 Start (UTC): {node.StartTimeUtc:yyyy-MM-dd HH:mm:ss.fff}" +
                 (node.ExitTimeUtc.HasValue ? $" | Exit (UTC): {node.ExitTimeUtc:yyyy-MM-dd HH:mm:ss.fff} (ExitCode: {node.ExitCode})" : " | Running") + @"
             </div>");
+
+        if (node.IsInjectionTarget)
+        {
+            sb.Append($@"
+            <div style=""margin-top: 8px; padding: 6px 10px; background: rgba(248, 81, 73, 0.1); border-left: 3px solid var(--accent-red); border-radius: 4px;"">
+                <div style=""color: var(--accent-red); font-weight: 600; font-size: 12px;"">
+                    ⚠ Injected Process (Target of DLL / Code Injection)
+                </div>" +
+                (node.InjectedByPid.HasValue ? $@"<div class=""mono"" style=""font-size: 11px; color: var(--text-muted); margin-top: 2px;"">Injected by PID: {node.InjectedByPid.Value}</div>" : "") +
+                (node.InjectedModules.Count > 0 ? $@"<div class=""mono"" style=""font-size: 11px; color: var(--text-muted); margin-top: 2px;"">Injected Modules: {Escape(string.Join(", ", node.InjectedModules))}</div>" : "") + @"
+            </div>");
+        }
 
         if (node.Children.Count > 0)
         {

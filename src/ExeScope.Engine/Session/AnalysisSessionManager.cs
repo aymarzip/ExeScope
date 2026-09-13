@@ -4,6 +4,7 @@ using ExeScope.Core.Diagnostics;
 using ExeScope.Core.Models;
 using ExeScope.Core.Utilities;
 using ExeScope.Engine.Collectors;
+using ExeScope.Engine.Detection;
 using ExeScope.Engine.Network;
 using ExeScope.Engine.Reporting;
 using ExeScope.Engine.Storage;
@@ -25,6 +26,7 @@ public class AnalysisSessionManager : IAsyncDisposable
     private FileArtifactCollector? _artifactCollector;
     private PcapngWriter? _pcapWriter;
     private RawSocketCapture? _rawSocketCapture;
+    private InjectionDetector? _injectionDetector;
 
     private readonly List<IEventCollector> _collectors = new();
     private readonly RollingBuffer<AnalysisEvent> _inMemoryEvents = new(50_000);
@@ -134,10 +136,18 @@ public class AnalysisSessionManager : IAsyncDisposable
 
         _collectors.Clear();
 
-        var etwCollector = new EtwEventCollector(_correlationEngine, _logger, onFileModifiedForArtifact: (path, pid, image) =>
+        if (_config.EnableInjectionTracking)
         {
-            _artifactCollector?.QueueFile(path, pid, image);
-        });
+            _injectionDetector = new InjectionDetector(_correlationEngine, _logger, _config.TrackInjectionTargetEvents);
+            _injectionDetector.InjectionDetected += OnInjectionDetected;
+        }
+
+        var etwCollector = new EtwEventCollector(_correlationEngine, _logger,
+            onFileModifiedForArtifact: (path, pid, image) =>
+            {
+                _artifactCollector?.QueueFile(path, pid, image);
+            },
+            injectionDetector: _injectionDetector);
         _collectors.Add(etwCollector);
 
         var processWatcher = new PollingProcessWatcher(_correlationEngine, _logger);
@@ -160,6 +170,18 @@ public class AnalysisSessionManager : IAsyncDisposable
         }
 
         _logger.Info("SessionManager", "Monitoring ready. Awaiting process launch.");
+    }
+
+    private void OnInjectionDetected(InjectionEvent evt)
+    {
+        _storage?.EnqueueEvent(evt);
+        _inMemoryEvents.Add(evt);
+        EventRecorded?.Invoke(evt);
+
+        _artifactCollector?.QueueFile(evt.InjectedModulePath ?? "", evt.SourceProcessId, evt.SourceProcessImage ?? "");
+
+        var tree = _correlationEngine?.BuildProcessTree();
+        if (tree != null) ProcessTreeUpdated?.Invoke(tree);
     }
 
     private void HandleProcessStarted(TrackedProcess proc)
@@ -369,6 +391,9 @@ public class AnalysisSessionManager : IAsyncDisposable
                 await _artifactCollector.DisposeAsync().ConfigureAwait(false);
                 _artifactCollector = null;
             }
+
+            _injectionDetector?.Dispose();
+            _injectionDetector = null;
 
             if (_currentMetadata != null)
             {

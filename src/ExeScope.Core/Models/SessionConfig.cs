@@ -33,9 +33,9 @@ public class SessionConfig
     /// </summary>
     public bool EnablePacketCapture { get; set; } = false;
 
-    /// <summary>
-    /// Automatically complete session once all tracked processes exit.
-    /// If false, wait for manual user stop.
-    /// </summary>
+    public bool EnableInjectionTracking { get; set; } = true;
+
+    public bool TrackInjectionTargetEvents { get; set; } = true;
+
     public bool AutoCompleteOnAllProcessesExit { get; set; } = true;
 }

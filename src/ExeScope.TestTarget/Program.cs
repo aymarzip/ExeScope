@@ -22,6 +22,11 @@ public class Program
             return await RunHighLoadTaskAsync(pid);
         }
 
+        if (args.Any(a => a.Equals("--simulate-injection", StringComparison.OrdinalIgnoreCase)))
+        {
+            return await RunSimulateInjectionAsync(pid);
+        }
+
         Console.WriteLine("[ExeScope TestTarget] Running main verification suite...");
 
         try
@@ -30,6 +35,7 @@ public class Program
             PerformChildProcessLaunch();
             PerformRegistryOperations();
             await PerformNetworkOperationsAsync();
+            await PerformSimulatedInjectionAsync();
 
             Console.WriteLine("[ExeScope TestTarget] All test operations completed successfully.");
             return 0;
@@ -251,5 +257,158 @@ public class Program
 
         Console.WriteLine($"[ExeScope TestTarget HIGH-LOAD] High load burst completed.");
         return 0;
+    }
+
+    private static async Task<int> RunSimulateInjectionAsync(int pid)
+    {
+        Console.WriteLine($"[ExeScope TestTarget INJECTION] Running dedicated DLL injection simulation. PID: {pid}");
+        await PerformSimulatedInjectionAsync();
+        Console.WriteLine("[ExeScope TestTarget INJECTION] Simulation completed successfully.");
+        return 0;
+    }
+
+    private static async Task PerformSimulatedInjectionAsync()
+    {
+        Console.WriteLine("\n--- 5. DLL Drop & Injection Simulation ---");
+        string tempDir = Path.GetTempPath();
+        string droppedDllPath = Path.Combine(tempDir, "exescope_injected_payload.dll");
+
+        try
+        {
+            if (File.Exists(droppedDllPath))
+            {
+                try { File.Delete(droppedDllPath); } catch { }
+            }
+
+            byte[] dllBytes = GetSampleDllBytes();
+
+            Console.WriteLine($"[Injection] Dropping payload DLL: {droppedDllPath} ({dllBytes.Length} bytes)");
+            await File.WriteAllBytesAsync(droppedDllPath, dllBytes);
+
+            await Task.Delay(200);
+
+            Console.WriteLine("[Injection] Simulating external process loading the dropped DLL via rundll32...");
+            bool launchedViaCom = TryLaunchExternalViaCom("rundll32.exe", $"\"{droppedDllPath}\",#1");
+            if (!launchedViaCom)
+            {
+                bool launchedViaWmi = TryLaunchExternalViaWmi("rundll32.exe", $"\"{droppedDllPath}\",#1");
+                if (!launchedViaWmi)
+                {
+                    LaunchDirectFallback("rundll32.exe", $"\"{droppedDllPath}\",#1");
+                }
+            }
+
+            // Give ETW and Artifact Collector time to capture and archive
+            await Task.Delay(1000);
+            Console.WriteLine("[Injection] DLL drop and load simulation sequence completed.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Injection] Simulation note: {ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(droppedDllPath))
+                {
+                    File.Delete(droppedDllPath);
+                }
+            }
+            catch { }
+        }
+    }
+
+    private static byte[] GetSampleDllBytes()
+    {
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var localDlls = Directory.GetFiles(baseDir, "*.dll");
+        if (localDlls.Length > 0)
+        {
+            try
+            {
+                return File.ReadAllBytes(localDlls[0]);
+            }
+            catch { }
+        }
+
+        string systemDll = Path.Combine(Environment.SystemDirectory, "version.dll");
+        if (File.Exists(systemDll))
+        {
+            try
+            {
+                return File.ReadAllBytes(systemDll);
+            }
+            catch { }
+        }
+
+        return Encoding.UTF8.GetBytes("MZ_EXESCOPE_SIMULATED_PAYLOAD_DLL");
+    }
+
+    private static bool TryLaunchExternalViaCom(string executable, string arguments)
+    {
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType == null) return false;
+            dynamic? shell = Activator.CreateInstance(shellType);
+            if (shell == null) return false;
+            shell.ShellExecute(executable, arguments, "", "open", 0);
+            Console.WriteLine("[Injection] External loader dispatched via Explorer Shell COM.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Injection] COM launch note: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryLaunchExternalViaWmi(string executable, string arguments)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{{CommandLine='{executable} {arguments}'}}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var p = Process.Start(psi);
+            p?.WaitForExit(3000);
+            bool success = p != null && p.ExitCode == 0;
+            if (success)
+            {
+                Console.WriteLine("[Injection] External loader dispatched via WMI Win32_Process.");
+            }
+            return success;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Injection] WMI launch note: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static void LaunchDirectFallback(string executable, string arguments)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = executable,
+                Arguments = arguments,
+                UseShellExecute = true,
+                CreateNoWindow = true
+            };
+            using var p = Process.Start(psi);
+            p?.WaitForExit(2000);
+            Console.WriteLine("[Injection] External loader dispatched via direct ShellExecute fallback.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Injection] Direct fallback note: {ex.Message}");
+        }
     }
 }

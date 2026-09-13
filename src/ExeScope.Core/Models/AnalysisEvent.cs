@@ -7,6 +7,7 @@ namespace ExeScope.Core.Models;
 [JsonDerivedType(typeof(FileEvent), typeDiscriminator: "file")]
 [JsonDerivedType(typeof(RegistryEvent), typeDiscriminator: "registry")]
 [JsonDerivedType(typeof(NetworkEvent), typeDiscriminator: "network")]
+[JsonDerivedType(typeof(InjectionEvent), typeDiscriminator: "injection")]
 [JsonDerivedType(typeof(DiagnosticEvent), typeDiscriminator: "diagnostic")]
 public abstract class AnalysisEvent
 {

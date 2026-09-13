@@ -14,6 +14,7 @@ public class ProcessCorrelationEngine
     // Track all processes by unique key: (PID, StartTimeUtc ticks)
     private readonly List<TrackedProcess> _allProcesses = new();
     private readonly Dictionary<int, List<TrackedProcess>> _processesByPid = new();
+    private readonly Dictionary<int, TrackedProcess> _injectionTargets = new();
 
     private TrackedProcess? _rootProcess;
     private bool _rootProcessLaunched;
@@ -25,6 +26,7 @@ public class ProcessCorrelationEngine
     public event Action<TrackedProcess>? OnProcessTerminated;
     public event Action<TrackedProcess>? OnRepeatedLaunchDetected;
     public event Action? OnAllTrackedProcessesExited;
+    public event Action<TrackedProcess>? OnInjectionTargetRegistered;
 
     public ProcessCorrelationEngine(TargetExeInfo targetExe, IDiagnosticLogger logger)
     {
@@ -203,6 +205,69 @@ public class ProcessCorrelationEngine
         }
     }
 
+    public void RegisterInjectionTarget(int pid, string imagePath, int injectedByPid, string? modulePath, DateTime timestampUtc)
+    {
+        lock (_sync)
+        {
+            if (_injectionTargets.ContainsKey(pid))
+            {
+                if (modulePath != null)
+                    _injectionTargets[pid].InjectedModules.Add(modulePath);
+                return;
+            }
+
+            var target = new TrackedProcess
+            {
+                ProcessId = pid,
+                ImagePath = PathSanitizer.NormalizeCanonicalPath(imagePath),
+                ImageName = Path.GetFileName(imagePath),
+                StartTimeUtc = timestampUtc,
+                IsInjectionTarget = true,
+                InjectedByPid = injectedByPid
+            };
+
+            if (modulePath != null)
+                target.InjectedModules.Add(modulePath);
+
+            _injectionTargets[pid] = target;
+            AddProcessInternal(target);
+
+            _logger.Info("ProcessCorrelation", $"Injection target registered: PID {pid} ({target.ImageName}), injected by PID {injectedByPid}");
+            OnInjectionTargetRegistered?.Invoke(target);
+        }
+    }
+
+    public bool IsInjectionTarget(int pid)
+    {
+        lock (_sync)
+        {
+            return _injectionTargets.ContainsKey(pid);
+        }
+    }
+
+    public bool IsProcessTrackedOrInjectionTarget(int pid, DateTime timestampUtc, out TrackedProcess? tracked)
+    {
+        lock (_sync)
+        {
+            tracked = FindTrackedProcess(pid, timestampUtc);
+            if (tracked != null)
+                return true;
+
+            if (_injectionTargets.TryGetValue(pid, out tracked))
+                return true;
+
+            return false;
+        }
+    }
+
+    public IReadOnlyList<TrackedProcess> GetInjectionTargets()
+    {
+        lock (_sync)
+        {
+            return _injectionTargets.Values.ToList();
+        }
+    }
+
     private ProcessNode MapToNode(TrackedProcess proc)
     {
         var node = new ProcessNode
@@ -216,7 +281,10 @@ public class ProcessCorrelationEngine
             ExitTimeUtc = proc.ExitTimeUtc,
             ExitCode = proc.ExitCode,
             IsRoot = proc.IsRoot,
-            LoadedModules = proc.LoadedModules.ToList()
+            IsInjectionTarget = proc.IsInjectionTarget,
+            InjectedByPid = proc.InjectedByPid,
+            LoadedModules = proc.LoadedModules.ToList(),
+            InjectedModules = proc.InjectedModules.ToList()
         };
 
         foreach (var child in proc.Children)

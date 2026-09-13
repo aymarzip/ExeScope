@@ -20,9 +20,15 @@ public class TrackedProcess
 
     public bool IsRoot { get; set; }
 
+    public bool IsInjectionTarget { get; set; }
+
+    public int? InjectedByPid { get; set; }
+
     public bool IsAlive => !ExitTimeUtc.HasValue;
 
     public HashSet<string> LoadedModules { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public List<string> InjectedModules { get; } = new();
 
     public List<TrackedProcess> Children { get; } = new();
 }

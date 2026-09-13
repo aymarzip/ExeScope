@@ -9,5 +9,6 @@ public enum EventCategory
     File,
     Registry,
     Network,
+    Injection,
     Diagnostic
 }
