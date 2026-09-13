@@ -1,4 +1,4 @@
-﻿# ExeScope Pre-built Release Binaries
+# ExeScope Pre-built Release Binaries
 
 Скомпилированные исполняемые файлы для Windows x64.
 
@@ -11,8 +11,8 @@
 
 | Файл | SHA-256 |
 | :--- | :--- |
-| ExeScope.UI.exe | C95C97E8CB8B983230E5D95DCD022C8F94218CCB0E796FCE0FF5276C02B02B86 |
-| ExeScope.TestTarget.exe | 330700F1125B853AF49AC17AAC127B9CCA899D9E2B3F06074FD46339E6C28715 |
+| ExeScope.UI.exe | 3B8CA56B0D74C1D748A1CBDA5C0AC981C83C84745AD01C1B8770267F6F82E61C |
+| ExeScope.TestTarget.exe | 0B9F01D97D11C64F1F44E75EFDF85DC752C946FB961F3893DB5853198B606E99 |
 
 ## Требования для запуска
 
