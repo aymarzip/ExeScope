@@ -1,0 +1,22 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:semi="https://irihi.tech/semi"
+             x:Class="ExeScope.GUI.App"
+             RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <semi:SemiTheme Locale="ru-ru" />
+        <StyleInclude Source="avares://Semi.Avalonia.DataGrid/Index.axaml" />
+    </Application.Styles>
+
+    <Application.Resources>
+        <SolidColorBrush x:Key="ThreatCleanBrush" Color="#8c9ba5" />
+        <SolidColorBrush x:Key="ThreatSuspiciousBrush" Color="#ff9800" />
+        <SolidColorBrush x:Key="ThreatMaliciousBrush" Color="#ff2a55" />
+        <SolidColorBrush x:Key="NeonCyanBrush" Color="#00e5ff" />
+        <SolidColorBrush x:Key="NeonGreenBrush" Color="#00ff88" />
+        <SolidColorBrush x:Key="CyberBackgroundBrush" Color="#0b0f19" />
+        <SolidColorBrush x:Key="CyberCardBrush" Color="#131b2e" />
+        <SolidColorBrush x:Key="CyberSubCardBrush" Color="#1c263d" />
+        <SolidColorBrush x:Key="CyberBorderBrush" Color="#23304d" />
+    </Application.Resources>
+</Application>

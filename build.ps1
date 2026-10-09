@@ -38,6 +38,7 @@ if ($RunTests) {
 # 4. Summary and publish paths
 Write-Host "`n[4/4] Build Completed Successfully!" -ForegroundColor Green
 Write-Host "Binaries located at:"
-Write-Host "  UI Application:  src/ExeScope.UI/bin/$Configuration/net8.0-windows/ExeScope.UI.exe" -ForegroundColor White
+Write-Host "  GUI Application: src/ExeScope.GUI/bin/$Configuration/net8.0/ExeScope.GUI.exe" -ForegroundColor White
+Write-Host "  Windows Agent:   src/ExeScope.Agent.Windows/bin/$Configuration/net8.0-windows/ExeScope.Agent.Windows.exe" -ForegroundColor White
 Write-Host "  Test Target:     src/ExeScope.TestTarget/bin/$Configuration/net8.0-windows/ExeScope.TestTarget.exe" -ForegroundColor White
 Write-Host "============================================================" -ForegroundColor Cyan

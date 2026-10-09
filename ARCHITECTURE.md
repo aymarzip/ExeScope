@@ -8,8 +8,23 @@
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                   ExeScope.UI (WPF)                    │
-│    MVVM: MainViewModel, Converters, Views, DataGrids   │
+│             ExeScope.GUI (Avalonia UI 11)              │
+│    Cross-Platform (.NET 8): Windows / Linux / macOS    │
+│    Semi.Avalonia Dark Cyber Theme, Virtualized Grid    │
+│    Process Hierarchy Tree, Threat Verdict Scorecard    │
+└───────────────────────────┬────────────────────────────┘
+                            │ gRPC / Named Pipes (HTTP/2)
+                            │ x-exescope-token Auth
+┌───────────────────────────▼────────────────────────────┐
+│                 ExeScope.Contracts                     │
+│    Protobuf Service, Event Records, Threat Engine      │
+│    ProcessStarted, DllInjected, Registry, Network      │
+└───────────────────────────┬────────────────────────────┘
+                            │
+┌───────────────────────────▼────────────────────────────┐
+│              ExeScope.Agent.Windows                    │
+│    Headless Telemetry Agent (ASP.NET Core WebHost)     │
+│    Zero UI-thread blocking, Sub-2% Idle CPU, Security  │
 └───────────────────────────┬────────────────────────────┘
                             │
 ┌───────────────────────────▼────────────────────────────┐
@@ -34,7 +49,7 @@
 │ ┌─────────▼──────────────────────────────────────────┐ │
 │ │ Хранилище и отчеты:                                │ │
 │ │  - FileSessionStorage (BoundedChannelQueue)        │ │
-│ │  - HtmlReportGenerator (Автономный HTML)           │ │
+│ │  - HtmlReportGenerator (Автономный HTML Any.Run)   │ │
 │ └────────────────────────────────────────────────────┘ │
 └───────────────────────────┬────────────────────────────┘
                             │
@@ -45,10 +60,12 @@
 └────────────────────────────────────────────────────────┘
 ```
 
-- **ExeScope.Core**: доменные модели событий (`AnalysisEvent`, `FileEvent`, `ProcessEvent`, `RegistryEvent`, `NetworkEvent`, `InjectionEvent`), перечисление техник внедрения `InjectionTechnique`, утилиты хеширования SHA-256, проверка цифровых подписей WinTrust Authenticode, кольцевой буфер и санитизация путей.
-- **ExeScope.Engine**: координатор сессий (`AnalysisSessionManager`), корреляция процессов (`ProcessCorrelationEngine`), детектор инъекций (`InjectionDetector`), сборщики телеметрии (ETW, Toolhelp32, IP Helper, Raw Sockets) и потоковая сериализация данных на диск.
-- **ExeScope.UI**: графический интерфейс на WPF (MVVM, виртуализация строк в DataGrid, реактивная фильтрация и поиск, вкладка «Инъекции» и визуализация скомпрометированных узлов в дереве процессов).
-- **ExeScope.TestTarget**: тестовое консольное приложение для функциональной и нагрузочной проверки всех подсистем анализатора (включая симуляцию сброса DLL и вызова внешнего загрузчика).
+- **ExeScope.Core**: базовые доменные модели событий (`AnalysisEvent`, `FileEvent`, `ProcessEvent`, `RegistryEvent`, `NetworkEvent`, `InjectionEvent`), перечисление техник внедрения `InjectionTechnique`, утилиты хеширования SHA-256, проверка цифровых подписей WinTrust Authenticode, кольцевой буфер и санитизация путей.
+- **ExeScope.Contracts**: протоколы взаимодействия gRPC (`telemetry.proto`), типизированные контракты событий (`ProcessStartedEvent`, `DllInjectedEvent`, `RegistryModifiedEvent`, `NetworkConnectionEvent`, `FileModifiedEvent`), защита канала (`IpcAuthToken`) и движок оценки вердикта угроз (`ThreatVerdictEvaluator`).
+- **ExeScope.Engine**: координатор сессий (`AnalysisSessionManager`), корреляция процессов (`ProcessCorrelationEngine`), детектор инъекций (`InjectionDetector`), сборщики телеметрии (ETW, Toolhelp32, IP Helper, Raw Sockets) и автономный генератор HTML-отчетов (`HtmlReportGenerator`).
+- **ExeScope.Agent.Windows**: легковесный высокопроизводительный агент перехвата для Windows, транслирующий телеметрию по защищенному gRPC / Named Pipes IPC в буферизованных каналах без блокировки потоков.
+- **ExeScope.GUI**: современный кроссплатформенный дашборд безопасности на Avalonia UI 11 (.NET 8) с темой Semi.Avalonia (эстетика CrowdStrike Falcon / DataDog Security), виртуализацией списков и троттлингом диспетчера для плавной работы при 50,000+ событий в секунду.
+- **ExeScope.TestTarget**: тестовое приложение для функциональной и нагрузочной проверки всех подсистем анализатора.
 
 ## 2. Системные особенности Windows и их обработка
 

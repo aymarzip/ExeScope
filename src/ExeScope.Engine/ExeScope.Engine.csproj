@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ExeScope.Core\ExeScope.Core.csproj" />
+    <ProjectReference Include="..\ExeScope.Contracts\ExeScope.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

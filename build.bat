@@ -41,7 +41,8 @@ if %ERRORLEVEL% neq 0 (
 echo.
 echo ============================================================
 echo   Build and tests completed successfully!
-echo   Main UI Executable: src\ExeScope.UI\bin\%CONFIG%\net8.0-windows\ExeScope.UI.exe
+echo   Cross-Platform GUI: src\ExeScope.GUI\bin\%CONFIG%\net8.0\ExeScope.GUI.exe
+echo   Windows Agent:      src\ExeScope.Agent.Windows\bin\%CONFIG%\net8.0-windows\ExeScope.Agent.Windows.exe
 echo   Test Target EXE:    src\ExeScope.TestTarget\bin\%CONFIG%\net8.0-windows\ExeScope.TestTarget.exe
 echo ============================================================
 exit /b 0

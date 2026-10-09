@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+option csharp_namespace = "ExeScope.Contracts.Grpc";
+
+package exescope.telemetry;
+
+service AgentTelemetryService {
+  rpc GetStatus (AgentStatusRequest) returns (AgentStatusResponse);
+  rpc StartSession (StartSessionRequest) returns (StartSessionResponse);
+  rpc StopSession (StopSessionRequest) returns (StopSessionResponse);
+  rpc StreamEvents (StreamEventsRequest) returns (stream TelemetryEnvelope);
+  rpc StreamArtifacts (StreamArtifactsRequest) returns (stream ArtifactMessage);
+  rpc ExportReport (ExportReportRequest) returns (ExportReportResponse);
+}
+
+message AgentStatusRequest {
+  string auth_token = 1;
+}
+
+message AgentStatusResponse {
+  bool is_ready = 1;
+  bool is_elevated = 2;
+  string current_state = 3;
+  string session_id = 4;
+  int64 total_events_recorded = 5;
+  int64 total_events_dropped = 6;
+  int64 session_size_bytes = 7;
+  string target_exe_path = 8;
+  int32 root_pid = 9;
+}
+
+message StartSessionRequest {
+  string auth_token = 1;
+  string target_exe_path = 2;
+  string output_directory = 3;
+  bool enable_artifacts = 4;
+  int32 max_artifact_size_mb = 5;
+  int32 max_storage_size_mb = 6;
+  bool enable_packet_capture = 7;
+  bool enable_injection_tracking = 8;
+  bool track_injection_target_events = 9;
+}
+
+message StartSessionResponse {
+  bool success = 1;
+  string message = 2;
+  string session_id = 3;
+  string target_sha256 = 4;
+  string signature_status = 5;
+}
+
+message StopSessionRequest {
+  string auth_token = 1;
+  string reason = 2;
+}
+
+message StopSessionResponse {
+  bool success = 1;
+  string message = 2;
+  string report_path = 3;
+  int64 total_events = 4;
+  int64 total_artifacts = 5;
+}
+
+message StreamEventsRequest {
+  string auth_token = 1;
+  int64 start_event_id = 2;
+}
+
+message StreamArtifactsRequest {
+  string auth_token = 1;
+}
+
+message ExportReportRequest {
+  string auth_token = 1;
+  string destination_path = 2;
+}
+
+message ExportReportResponse {
+  bool success = 1;
+  string report_path = 2;
+  string html_content = 3;
+  string error_message = 4;
+}
+
+message TelemetryEnvelope {
+  int64 event_id = 1;
+  string timestamp_utc = 2;
+  string category = 3;
+  int32 process_id = 4;
+  string process_image = 5;
+  string summary = 6;
+
+  oneof payload {
+    ProcessStartedEvent process_started = 10;
+    ProcessTerminatedEvent process_terminated = 11;
+    DllInjectedEvent dll_injected = 12;
+    RegistryModifiedEvent registry_modified = 13;
+    NetworkConnectionEvent network_connection = 14;
+    FileModifiedEvent file_modified = 15;
+    DiagnosticMessageEvent diagnostic_message = 16;
+  }
+}
+
+message ProcessStartedEvent {
+  int32 process_id = 1;
+  int32 parent_process_id = 2;
+  string parent_image = 3;
+  string image_path = 4;
+  string command_line = 5;
+  string timestamp_utc = 6;
+}
+
+message ProcessTerminatedEvent {
+  int32 process_id = 1;
+  string image_path = 2;
+  int32 exit_code = 3;
+  string timestamp_utc = 4;
+}
+
+message DllInjectedEvent {
+  int32 source_process_id = 1;
+  string source_process_image = 2;
+  int32 target_process_id = 3;
+  string target_process_image = 4;
+  string injected_module_path = 5;
+  string technique = 6;
+  string details = 7;
+  uint64 remote_thread_address = 8;
+  string timestamp_utc = 9;
+}
+
+message RegistryModifiedEvent {
+  int32 process_id = 1;
+  string process_image = 2;
+  string operation = 3;
+  string key_path = 4;
+  string value_name = 5;
+  string value_type = 6;
+  string value_data_summary = 7;
+  string result = 8;
+  string timestamp_utc = 9;
+}
+
+message NetworkConnectionEvent {
+  int32 process_id = 1;
+  string process_image = 2;
+  string protocol = 3;
+  string direction = 4;
+  string local_endpoint = 5;
+  string remote_endpoint = 6;
+  int64 bytes_transferred = 7;
+  string dns_query = 8;
+  string dns_response = 9;
+  string correlation_method = 10;
+  string confidence = 11;
+  string security_notes = 12;
+  string timestamp_utc = 13;
+}
+
+message FileModifiedEvent {
+  int32 process_id = 1;
+  string process_image = 2;
+  string operation = 3;
+  string file_path = 4;
+  string result = 5;
+  int64 byte_offset = 6;
+  int64 byte_count = 7;
+  string timestamp_utc = 8;
+}
+
+message DiagnosticMessageEvent {
+  string level = 1;
+  string source = 2;
+  string message = 3;
+  string timestamp_utc = 4;
+}
+
+message ArtifactMessage {
+  int32 process_id = 1;
+  string original_path = 2;
+  string artifact_file_name = 3;
+  string sha256 = 4;
+  int64 size_bytes = 5;
+  string copy_status = 6;
+  string timestamp_utc = 7;
+  bytes preview_bytes = 8;
+}

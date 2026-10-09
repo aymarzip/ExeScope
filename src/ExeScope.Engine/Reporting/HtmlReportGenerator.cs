@@ -3,6 +3,8 @@ using System.Net;
 using System.Text;
 using ExeScope.Core.Diagnostics;
 using ExeScope.Core.Models;
+using ExeScope.Contracts.Events;
+using ExeScope.Contracts.Threat;
 
 namespace ExeScope.Engine.Reporting;
 
@@ -26,6 +28,44 @@ public class HtmlReportGenerator
         string endTime = metadata.RecordingEndedUtc?.ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "N/A";
 
         var injectionEvents = events.OfType<InjectionEvent>().ToList();
+        var fileEvents = events.OfType<FileEvent>().ToList();
+        var regEvents = events.OfType<RegistryEvent>().ToList();
+        var netEvents = events.OfType<NetworkEvent>().ToList();
+        var procEvents = events.OfType<ProcessEvent>().ToList();
+
+        // Convert to contracts for ThreatVerdictEvaluator
+        var procContracts = procEvents
+            .Where(p => p.EventType == ProcessEventType.Started)
+            .Select(p => new ProcessStartedEvent(p.EventId, p.TimestampUtc, p.ProcessId, p.ParentProcessId, p.ProcessImage, p.ParentImage, p.ImagePath, p.CommandLine));
+
+        var injContracts = injectionEvents.Select(i => new DllInjectedEvent(
+            i.EventId, i.TimestampUtc, i.SourceProcessId, i.SourceProcessImage, i.TargetProcessId,
+            i.TargetProcessImage, i.InjectedModulePath, i.Technique.ToString(), i.Details, i.RemoteThreadStartAddress));
+
+        var regContracts = regEvents.Select(r => new RegistryModifiedEvent(
+            r.EventId, r.TimestampUtc, r.ProcessId, r.ProcessImage, r.Operation.ToString(),
+            r.KeyPath, r.ValueName, r.ValueType, r.ValueDataSummary, r.Result));
+
+        var netContracts = netEvents.Select(n => new NetworkConnectionEvent(
+            n.EventId, n.TimestampUtc, n.ProcessId, n.ProcessImage, n.Protocol.ToString(),
+            n.Direction.ToString(), n.LocalEndpoint, n.RemoteEndpoint, n.BytesTransferred,
+            n.DnsQuery, n.DnsResponse, n.CorrelationMethod.ToString(), n.Confidence, n.SecurityNotes));
+
+        var fileContracts = fileEvents.Select(f => new FileModifiedEvent(
+            f.EventId, f.TimestampUtc, f.ProcessId, f.ProcessImage, f.Operation.ToString(),
+            f.Path, f.Result, f.ByteOffset, f.ByteCount));
+
+        bool isUnsigned = metadata.TargetExe != null && !metadata.TargetExe.IsSigned;
+        bool targetModified = metadata.TargetModifiedAfterSelection;
+
+        var verdict = ThreatVerdictEvaluator.Evaluate(
+            procContracts,
+            injContracts,
+            regContracts,
+            netContracts,
+            fileContracts,
+            isUnsigned: isUnsigned,
+            targetModifiedOnDisk: targetModified);
 
         sb.Append($@"<!DOCTYPE html>
 <html lang=""en"">
@@ -35,94 +75,157 @@ public class HtmlReportGenerator
     <title>ExeScope Dynamic Analysis Report: {exeName}</title>
     <style>
         :root {{
-            --bg-color: #0d1117;
-            --card-bg: #161b22;
-            --border-color: #30363d;
-            --text-color: #c9d1d9;
-            --text-muted: #8b949e;
-            --accent-color: #58a6ff;
-            --accent-green: #3fb950;
-            --accent-red: #f85149;
-            --accent-yellow: #d29922;
-            --accent-purple: #bc8cff;
+            --bg-color: #0b0f19;
+            --card-bg: #131b2e;
+            --card-sub-bg: #1c263d;
+            --border-color: #23304d;
+            --text-color: #d1d9e6;
+            --text-muted: #798ba3;
+            --accent-cyan: #00e5ff;
+            --accent-green: #00ff88;
+            --accent-red: #ff3366;
+            --accent-orange: #ff9800;
+            --accent-purple: #bb86fc;
+            --verdict-color: {verdict.HexColor};
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             line-height: 1.5;
             padding: 24px;
         }}
-        .container {{ max-width: 1300px; margin: 0 auto; }}
+        .container {{ max-width: 1400px; margin: 0 auto; }}
         header {{
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 24px;
             margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         }}
-        h1 {{ font-size: 24px; margin-bottom: 8px; color: #fff; }}
+        h1 {{ font-size: 24px; margin-bottom: 8px; color: #fff; font-weight: 700; letter-spacing: -0.5px; }}
         .badge {{
             display: inline-block;
-            padding: 3px 8px;
+            padding: 4px 10px;
             border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }}
-        .badge-success {{ background-color: rgba(63, 185, 80, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }}
-        .badge-warn {{ background-color: rgba(210, 153, 34, 0.2); color: var(--accent-yellow); border: 1px solid var(--accent-yellow); }}
-        .badge-danger {{ background-color: rgba(248, 81, 73, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }}
-        .badge-info {{ background-color: rgba(88, 166, 255, 0.2); color: var(--accent-color); border: 1px solid var(--accent-color); }}
-        
+        .badge-success {{ background-color: rgba(0, 255, 136, 0.15); color: var(--accent-green); border: 1px solid var(--accent-green); }}
+        .badge-warn {{ background-color: rgba(255, 152, 0, 0.15); color: var(--accent-orange); border: 1px solid var(--accent-orange); }}
+        .badge-danger {{ background-color: rgba(255, 51, 102, 0.15); color: var(--accent-red); border: 1px solid var(--accent-red); }}
+        .badge-info {{ background-color: rgba(0, 229, 255, 0.15); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); }}
+        .badge-purple {{ background-color: rgba(187, 134, 252, 0.15); color: var(--accent-purple); border: 1px solid var(--accent-purple); }}
+
+        /* Scorecard Any.Run Style */
+        .verdict-scorecard {{
+            background: linear-gradient(135deg, rgba(19, 27, 46, 0.95), rgba(28, 38, 61, 0.95));
+            border: 2px solid var(--verdict-color);
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.5);
+        }}
+        .verdict-gauge {{
+            width: 100px;
+            height: 100px;
+            position: relative;
+            flex-shrink: 0;
+        }}
+        .verdict-info {{
+            flex: 1;
+        }}
+        .verdict-title {{
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--verdict-color);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .verdict-desc {{
+            font-size: 13px;
+            color: var(--text-color);
+            margin-bottom: 12px;
+        }}
+        .ioc-pills {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }}
+        .ioc-pill {{
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 12px;
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        }}
+
         .grid-summary {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 14px;
             margin-top: 20px;
         }}
         .stat-card {{
-            background: rgba(255,255,255,0.03);
+            background: rgba(255,255,255,0.02);
             border: 1px solid var(--border-color);
-            padding: 16px;
-            border-radius: 6px;
+            padding: 14px 16px;
+            border-radius: 8px;
         }}
-        .stat-card .label {{ font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }}
-        .stat-card .value {{ font-size: 18px; font-weight: 600; word-break: break-all; color: #fff; }}
+        .stat-card .label {{ font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; font-weight: 600; }}
+        .stat-card .value {{ font-size: 16px; font-weight: 700; word-break: break-all; color: #fff; }}
 
         .tabs {{
             display: flex;
             gap: 8px;
             border-bottom: 1px solid var(--border-color);
             margin-bottom: 20px;
+            overflow-x: auto;
         }}
         .tab-btn {{
             background: none;
             border: none;
             border-bottom: 2px solid transparent;
             color: var(--text-muted);
-            padding: 10px 16px;
+            padding: 10px 18px;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }}
+        .tab-btn:hover {{
+            color: #fff;
         }}
         .tab-btn.active {{
-            color: var(--accent-color);
-            border-bottom-color: var(--accent-color);
+            color: var(--accent-cyan);
+            border-bottom-color: var(--accent-cyan);
         }}
         .tab-panel {{ display: none; }}
         .tab-panel.active {{ display: block; }}
 
         .search-box {{
             width: 100%;
-            padding: 10px 14px;
+            padding: 11px 16px;
             background: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 6px;
             color: #fff;
             margin-bottom: 16px;
-            font-size: 14px;
+            font-size: 13px;
+        }}
+        .search-box:focus {{
+            outline: none;
+            border-color: var(--accent-cyan);
         }}
 
         table {{
@@ -130,7 +233,7 @@ public class HtmlReportGenerator
             border-collapse: collapse;
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border-radius: 8px;
             overflow: hidden;
             font-size: 13px;
         }}
@@ -140,11 +243,12 @@ public class HtmlReportGenerator
             border-bottom: 1px solid var(--border-color);
         }}
         th {{
-            background-color: rgba(255,255,255,0.02);
+            background-color: rgba(255,255,255,0.03);
             color: var(--text-muted);
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             font-size: 11px;
+            letter-spacing: 0.5px;
         }}
         tr:hover {{ background-color: rgba(255,255,255,0.02); }}
         .mono {{ font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }}
@@ -152,7 +256,7 @@ public class HtmlReportGenerator
         .tree-node {{
             background: var(--card-bg);
             border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 14px;
             margin-bottom: 10px;
         }}
@@ -163,22 +267,66 @@ public class HtmlReportGenerator
             padding-left: 14px;
         }}
         .warning-banner {{
-            background: rgba(248, 81, 73, 0.15);
+            background: rgba(255, 51, 102, 0.12);
             border: 1px solid var(--accent-red);
-            border-radius: 6px;
-            padding: 14px;
-            color: #ff7b72;
+            border-radius: 8px;
+            padding: 14px 18px;
+            color: #ff85a1;
             margin-bottom: 20px;
             font-weight: 600;
         }}
         .info-banner {{
-            background: rgba(88, 166, 255, 0.1);
-            border: 1px solid var(--accent-color);
-            border-radius: 6px;
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 8px;
             padding: 10px 14px;
             margin-bottom: 14px;
             font-size: 13px;
-            color: var(--accent-color);
+            color: var(--accent-cyan);
+        }}
+
+        /* Visual Timeline */
+        .chart-card {{
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }}
+        .chart-header {{
+            font-size: 13px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 700;
+            margin-bottom: 12px;
+        }}
+        .chart-bar-container {{
+            display: flex;
+            height: 24px;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #1c263d;
+            margin-bottom: 10px;
+        }}
+        .chart-bar-seg {{
+            height: 100%;
+            transition: width 0.3s;
+        }}
+        .chart-legend {{
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }}
+        .chart-legend-item {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }}
+        .chart-dot {{
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
         }}
     </style>
 </head>
@@ -197,6 +345,34 @@ public class HtmlReportGenerator
                 <span class=""badge {(metadata.IsElevated ? "badge-danger" : "badge-warn")}"">
                     {(metadata.IsElevated ? "Elevated (Kernel ETW)" : "Standard User")}
                 </span>
+            </div>
+        </div>
+
+        <!-- Threat Verdict Scorecard (Any.Run / CrowdStrike Aesthetic) -->
+        <div class=""verdict-scorecard"">
+            <div class=""verdict-gauge"">
+                <svg width=""100"" height=""100"" viewBox=""0 0 100 100"">
+                    <circle cx=""50"" cy=""50"" r=""40"" stroke=""#1c263d"" stroke-width=""8"" fill=""none"" />
+                    <circle cx=""50"" cy=""50"" r=""40"" stroke=""{verdict.HexColor}"" stroke-width=""8"" fill=""none""
+                            stroke-dasharray=""251.2"" stroke-dashoffset=""{251.2 - (251.2 * verdict.Score / 100.0):F1}""
+                            stroke-linecap=""round"" transform=""rotate(-90 50 50)"" />
+                    <text x=""50"" y=""48"" text-anchor=""middle"" font-family=""sans-serif"" font-size=""22"" font-weight=""800"" fill=""#ffffff"">{verdict.Score}</text>
+                    <text x=""50"" y=""66"" text-anchor=""middle"" font-family=""sans-serif"" font-size=""10"" fill=""{verdict.HexColor}"" font-weight=""700"">SCORE</text>
+                </svg>
+            </div>
+            <div class=""verdict-info"">
+                <div class=""verdict-title"">{verdict.LevelDisplay} VERDICT ({verdict.Score}/100)</div>
+                <div class=""verdict-desc"">{Escape(verdict.SummaryText)}</div>
+                <div class=""ioc-pills"">
+                    <span class=""badge {(verdict.Level == ThreatLevel.Malicious ? "badge-danger" : verdict.Level == ThreatLevel.Suspicious ? "badge-warn" : "badge-success")}"">
+                        VERDICT: {verdict.LevelDisplay}
+                    </span>
+                    <span class=""ioc-pill"">IOCs Detected: {verdict.Indicators.Count}</span>
+                    <span class=""ioc-pill"">Injections: {injectionEvents.Count}</span>
+                    <span class=""ioc-pill"">Modified Files: {fileEvents.Count}</span>
+                    <span class=""ioc-pill"">Registry Ops: {regEvents.Count}</span>
+                    <span class=""ioc-pill"">Network Conns: {netEvents.Count}</span>
+                </div>
             </div>
         </div>
 
@@ -221,7 +397,7 @@ public class HtmlReportGenerator
             </div>
             <div class=""stat-card"">
                 <div class=""label"">SHA-256</div>
-                <div class=""value mono"" style=""font-size: 13px;"">{exeHash}</div>
+                <div class=""value mono"" style=""font-size: 12px;"">{exeHash}</div>
             </div>
             <div class=""stat-card"">
                 <div class=""label"">Injections / Инъекции</div>
@@ -242,18 +418,69 @@ public class HtmlReportGenerator
         </div>
     </header>
 
+    <!-- Visual Activity Breakdown Chart -->
+    {RenderActivityBreakdownChart(events, injectionEvents.Count, fileEvents.Count, regEvents.Count, netEvents.Count, procEvents.Count)}
+
     <div class=""tabs"">
-        <button class=""tab-btn active"" onclick=""showTab('tab-tree', this)"">Process Tree</button>
+        <button class=""tab-btn active"" onclick=""showTab('tab-scorecard', this)"">Threat Verdict & IOCs ({verdict.Indicators.Count})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-tree', this)"">Process Tree</button>
         <button class=""tab-btn"" onclick=""showTab('tab-injections', this)"">Обнаруженные инъекции ({injectionEvents.Count})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-files', this)"">File Events ({events.Count(e => e.Category == EventCategory.File)})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-registry', this)"">Registry Events ({events.Count(e => e.Category == EventCategory.Registry)})</button>
-        <button class=""tab-btn"" onclick=""showTab('tab-network', this)"">Network Events ({events.Count(e => e.Category == EventCategory.Network)})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-files', this)"">File Events ({fileEvents.Count})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-registry', this)"">Registry Events ({regEvents.Count})</button>
+        <button class=""tab-btn"" onclick=""showTab('tab-network', this)"">Network Events ({netEvents.Count})</button>
         <button class=""tab-btn"" onclick=""showTab('tab-artifacts', this)"">Saved Artifacts ({artifacts.Count})</button>
         <button class=""tab-btn"" onclick=""showTab('tab-diagnostics', this)"">Diagnostics ({diagnostics.Count})</button>
     </div>
 
+    <!-- Threat Scorecard & IOCs Tab -->
+    <div id=""tab-scorecard"" class=""tab-panel active"">
+        <input type=""text"" class=""search-box"" placeholder=""Search detected IOCs, rules, MITRE techniques, or evidence..."" onkeyup=""filterTable('ioc-table', this.value)"">
+        <table id=""ioc-table"">
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>MITRE ATT&CK</th>
+                    <th>Rule / Title</th>
+                    <th>Description</th>
+                    <th>Evidence</th>
+                </tr>
+            </thead>
+            <tbody>");
+
+        if (verdict.Indicators.Count == 0)
+        {
+            sb.Append("<tr><td colspan='5' style='color: var(--text-muted); text-align:center;'>No adverse indicators detected. Executable exhibited clean baseline behavior.</td></tr>");
+        }
+        else
+        {
+            foreach (var ioc in verdict.Indicators)
+            {
+                string sevBadge = ioc.Severity switch
+                {
+                    IocSeverity.Critical => "badge-danger",
+                    IocSeverity.High => "badge-warn",
+                    IocSeverity.Medium => "badge-info",
+                    _ => "badge-success"
+                };
+
+                sb.Append($@"
+                <tr>
+                    <td><span class=""badge {sevBadge}"">{ioc.Severity}</span></td>
+                    <td class=""mono""><span class=""badge badge-purple"">{Escape(ioc.MitreTechniqueId ?? "T1000")}</span></td>
+                    <td><strong>{Escape(ioc.Title)}</strong><div class=""mono"" style=""font-size:11px; color:var(--text-muted);"">{Escape(ioc.RuleId)}</div></td>
+                    <td>{Escape(ioc.Description)}</td>
+                    <td class=""mono"" style=""max-width:350px; word-break:break-all;"">{Escape(ioc.Evidence ?? "-")}</td>
+                </tr>");
+            }
+        }
+
+        sb.Append(@"
+            </tbody>
+        </table>
+    </div>
+
     <!-- Process Tree Tab -->
-    <div id=""tab-tree"" class=""tab-panel active"">");
+    <div id=""tab-tree"" class=""tab-panel"">");
 
         if (processTree != null)
         {
@@ -318,7 +545,6 @@ public class HtmlReportGenerator
     <div id=""tab-files"" class=""tab-panel"">
         <input type=""text"" class=""search-box"" placeholder=""Search file operations or paths..."" onkeyup=""filterTable('files-table', this.value)"">");
 
-        var fileEvents = events.OfType<FileEvent>().ToList();
         if (fileEvents.Count > maxTableRows)
         {
             sb.Append($@"<div class=""info-banner"">Showing first {maxTableRows.ToString("N0", CultureInfo.InvariantCulture)} of {fileEvents.Count.ToString("N0", CultureInfo.InvariantCulture)} file events. The full dataset is saved in events.jsonl.</div>");
@@ -363,7 +589,6 @@ public class HtmlReportGenerator
     <div id=""tab-registry"" class=""tab-panel"">
         <input type=""text"" class=""search-box"" placeholder=""Search registry keys or values..."" onkeyup=""filterTable('reg-table', this.value)"">");
 
-        var regEvents = events.OfType<RegistryEvent>().ToList();
         if (regEvents.Count > maxTableRows)
         {
             sb.Append($@"<div class=""info-banner"">Showing first {maxTableRows.ToString("N0", CultureInfo.InvariantCulture)} of {regEvents.Count.ToString("N0", CultureInfo.InvariantCulture)} registry events. The full dataset is saved in events.jsonl.</div>");
@@ -406,7 +631,6 @@ public class HtmlReportGenerator
     <div id=""tab-network"" class=""tab-panel"">
         <input type=""text"" class=""search-box"" placeholder=""Search addresses, ports, or DNS..."" onkeyup=""filterTable('net-table', this.value)"">");
 
-        var netEvents = events.OfType<NetworkEvent>().ToList();
         if (netEvents.Count > maxTableRows)
         {
             sb.Append($@"<div class=""info-banner"">Showing first {maxTableRows.ToString("N0", CultureInfo.InvariantCulture)} of {netEvents.Count.ToString("N0", CultureInfo.InvariantCulture)} network events. The full dataset is saved in events.jsonl.</div>");
@@ -542,7 +766,8 @@ public class HtmlReportGenerator
     function showTab(tabId, btn) {
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(tabId).classList.add('active');
+        const panel = document.getElementById(tabId);
+        if (panel) panel.classList.add('active');
         if (btn) {
             btn.classList.add('active');
         } else if (window.event && window.event.target) {
@@ -563,6 +788,39 @@ public class HtmlReportGenerator
 </html>");
 
         return sb.ToString();
+    }
+
+    private static string RenderActivityBreakdownChart(
+        IReadOnlyList<AnalysisEvent> events,
+        int injCount, int fileCount, int regCount, int netCount, int procCount)
+    {
+        int total = injCount + fileCount + regCount + netCount + procCount;
+        if (total == 0) return string.Empty;
+
+        double pInj = (double)injCount / total * 100.0;
+        double pFile = (double)fileCount / total * 100.0;
+        double pReg = (double)regCount / total * 100.0;
+        double pNet = (double)netCount / total * 100.0;
+        double pProc = (double)procCount / total * 100.0;
+
+        return $@"
+        <div class=""chart-card"">
+            <div class=""chart-header"">Telemetry Activity Distribution ({total:N0} total operations)</div>
+            <div class=""chart-bar-container"">
+                {(injCount > 0 ? $"<div class=\"chart-bar-seg\" style=\"width:{pInj:F1}%; background:#ff3366;\" title=\"Injections: {injCount}\"></div>" : "")}
+                {(fileCount > 0 ? $"<div class=\"chart-bar-seg\" style=\"width:{pFile:F1}%; background:#00e5ff;\" title=\"File Operations: {fileCount}\"></div>" : "")}
+                {(regCount > 0 ? $"<div class=\"chart-bar-seg\" style=\"width:{pReg:F1}%; background:#ff9800;\" title=\"Registry Operations: {regCount}\"></div>" : "")}
+                {(netCount > 0 ? $"<div class=\"chart-bar-seg\" style=\"width:{pNet:F1}%; background:#00ff88;\" title=\"Network Events: {netCount}\"></div>" : "")}
+                {(procCount > 0 ? $"<div class=\"chart-bar-seg\" style=\"width:{pProc:F1}%; background:#bb86fc;\" title=\"Process Events: {procCount}\"></div>" : "")}
+            </div>
+            <div class=""chart-legend"">
+                <div class=""chart-legend-item""><div class=""chart-dot"" style=""background:#ff3366;""></div>Injections ({injCount})</div>
+                <div class=""chart-legend-item""><div class=""chart-dot"" style=""background:#00e5ff;""></div>Files ({fileCount})</div>
+                <div class=""chart-legend-item""><div class=""chart-dot"" style=""background:#ff9800;""></div>Registry ({regCount})</div>
+                <div class=""chart-legend-item""><div class=""chart-dot"" style=""background:#00ff88;""></div>Network ({netCount})</div>
+                <div class=""chart-legend-item""><div class=""chart-dot"" style=""background:#bb86fc;""></div>Processes ({procCount})</div>
+            </div>
+        </div>";
     }
 
     private static void RenderProcessNodeHtml(StringBuilder sb, ProcessNode node)
@@ -588,7 +846,7 @@ public class HtmlReportGenerator
         if (node.IsInjectionTarget)
         {
             sb.Append($@"
-            <div style=""margin-top: 8px; padding: 6px 10px; background: rgba(248, 81, 73, 0.1); border-left: 3px solid var(--accent-red); border-radius: 4px;"">
+            <div style=""margin-top: 8px; padding: 6px 10px; background: rgba(255, 51, 102, 0.1); border-left: 3px solid var(--accent-red); border-radius: 4px;"">
                 <div style=""color: var(--accent-red); font-weight: 600; font-size: 12px;"">
                     ⚠ Injected Process (Target of DLL / Code Injection)
                 </div>" +

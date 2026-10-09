@@ -1,0 +1,336 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ExeScope.GUI.ViewModels"
+        xmlns:models="using:ExeScope.GUI.Models"
+        xmlns:threat="using:ExeScope.Contracts.Threat"
+        xmlns:grpc="using:ExeScope.Contracts.Grpc"
+        xmlns:conv="using:ExeScope.GUI.Converters"
+        x:Class="ExeScope.GUI.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="ExeScope — Cyber Dynamic Analysis Sandbox"
+        Width="1440" Height="900"
+        MinWidth="1100" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource CyberBackgroundBrush}">
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding SelectTargetCommand}" />
+        <KeyBinding Gesture="Ctrl+R" Command="{Binding StartSessionCommand}" />
+        <KeyBinding Gesture="F5" Command="{Binding StartSessionCommand}" />
+        <KeyBinding Gesture="Ctrl+Q" Command="{Binding StopSessionCommand}" />
+        <KeyBinding Gesture="Shift+F5" Command="{Binding StopSessionCommand}" />
+        <KeyBinding Gesture="Ctrl+E" Command="{Binding ExportReportCommand}" />
+    </Window.KeyBindings>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
+
+        <!-- Top Header Navigation & Control Bar -->
+        <Border Grid.Row="0" Background="{StaticResource CyberCardBrush}"
+                BorderBrush="{StaticResource CyberBorderBrush}" BorderThickness="1"
+                CornerRadius="8" Padding="16,12" Margin="0,0,0,12">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <!-- Branding -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Border Background="#ff2a55" CornerRadius="4" Width="28" Height="28" VerticalAlignment="Center">
+                        <TextBlock Text="⚡" Foreground="White" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="EXESCOPE // CYBER SANDBOX" FontWeight="ExtraBold" FontSize="16" Foreground="White" LetterSpacing="0.5" />
+                        <TextBlock Text="Autonomous Dynamic Malware Analysis Suite (.NET 8)" FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Status Pill -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <Border Background="#1c263d" BorderBrush="{StaticResource CyberBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,4">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Ellipse Width="8" Height="8" Fill="{Binding IsAgentConnected, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding AgentStatusText}" FontSize="12" Foreground="White" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#1c263d" BorderBrush="{StaticResource CyberBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,4">
+                        <TextBlock Text="{Binding State}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource NeonCyanBrush}" VerticalAlignment="Center" />
+                    </Border>
+                </StackPanel>
+
+                <!-- Quick Actions Toolbar -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Content="📂 Select Target (Ctrl+O)" Command="{Binding SelectTargetCommand}" Click="OnSelectTargetClick"
+                            Classes="Secondary" />
+                    <Button Content="▶ Start (Ctrl+R / F5)" Command="{Binding StartSessionCommand}"
+                            Classes="Primary" Background="#00b96b" />
+                    <Button Content="⏹ Stop (Ctrl+Q)" Command="{Binding StopSessionCommand}"
+                            Classes="Danger" Background="#ff2a55" />
+                    <Button Content="📄 Export HTML (Ctrl+E)" Command="{Binding ExportReportCommand}"
+                            Classes="Primary" Background="#1677ff" />
+                    <Button Content="📁 Results" Command="{Binding OpenResultsFolderCommand}"
+                            Classes="Secondary" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Threat Scorecard & Target Info Panel -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,400" Margin="0,0,0,12">
+            <!-- Target Binary Information Card -->
+            <Border Grid.Column="0" Background="{StaticResource CyberCardBrush}"
+                    BorderBrush="{StaticResource CyberBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16" Margin="0,0,8,0">
+                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+                    <!-- File Path -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="TARGET EXE:" FontWeight="Bold" FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" VerticalAlignment="Center" Margin="0,0,10,6" />
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TargetExePath}" IsReadOnly="False" FontSize="12"
+                             FontFamily="Consolas, Cascadia Code, Courier New, monospace" Margin="0,0,8,6" />
+                    <Button Grid.Row="0" Grid.Column="2" Content="Copy" Command="{Binding CopyPathCommand}" Margin="0,0,0,6" Classes="Small" />
+
+                    <!-- SHA-256 -->
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="SHA-256:" FontWeight="Bold" FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" VerticalAlignment="Center" Margin="0,0,10,6" />
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TargetSha256}" IsReadOnly="True" FontSize="12"
+                             FontFamily="Consolas, Cascadia Code, Courier New, monospace" Margin="0,0,8,6" />
+                    <Button Grid.Row="1" Grid.Column="2" Content="Copy" Command="{Binding CopyHashCommand}" Margin="0,0,0,6" Classes="Small" />
+
+                    <!-- Signature & Output Dir -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="SIGNATURE:" FontWeight="Bold" FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Border Background="#1c263d" BorderBrush="{StaticResource CyberBorderBrush}" BorderThickness="1" CornerRadius="4" Padding="8,3">
+                            <TextBlock Text="{Binding SignatureStatus}" FontSize="11" FontWeight="Bold" Foreground="White" />
+                        </Border>
+                        <TextBlock Text="DIR:" FontWeight="Bold" FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                        <TextBlock Text="{Binding OutputDirectory}" FontSize="11" Foreground="White" VerticalAlignment="Center" FontFamily="Consolas, monospace" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Threat Verdict Scorecard (CrowdStrike / DataDog Aesthetics) -->
+            <Border Grid.Column="1" Background="{StaticResource CyberCardBrush}"
+                    BorderBrush="{Binding ThreatLevel, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}"
+                    BorderThickness="2" CornerRadius="8" Padding="16" Margin="8,0,0,0">
+                <Grid ColumnDefinitions="90,*">
+                    <!-- Gauge Score -->
+                    <Grid Grid.Column="0" Width="80" Height="80" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Ellipse Stroke="#1c263d" StrokeThickness="7" Width="76" Height="76" />
+                        <ProgressBar Width="76" Height="76" Value="{Binding ThreatScore}" Maximum="100"
+                                     Theme="{DynamicResource ProgressRing}"
+                                     Foreground="{Binding ThreatLevel, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}" />
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding ThreatScore}" FontSize="22" FontWeight="ExtraBold" Foreground="White" HorizontalAlignment="Center" />
+                            <TextBlock Text="SCORE" FontSize="9" FontWeight="Bold" Foreground="{StaticResource ThreatCleanBrush}" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Verdict Details -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding ThreatLevel}" FontSize="16" FontWeight="ExtraBold"
+                                       Foreground="{Binding ThreatLevel, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}" />
+                            <Border Background="#1c263d" CornerRadius="3" Padding="6,2">
+                                <TextBlock Text="{Binding ThreatIndicators.Count, StringFormat='{}IOCs: {0}'}" FontSize="11" FontWeight="Bold" Foreground="White" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ThreatSummaryText}" FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource ThreatCleanBrush}" MaxLines="2" />
+                        <Button Content="Copy IOC Indicators" Command="{Binding CopyIocCommand}" Classes="Small" Margin="0,4,0,0" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Main Workspace Tabs -->
+        <TabControl Grid.Row="2" Margin="0,0,0,12">
+
+            <!-- TAB 1: Live Event Stream -->
+            <TabItem Header="⚡ Event Stream DataGrid">
+                <Grid RowDefinitions="Auto,*" Margin="0,8,0,0">
+                    <!-- Search & Category Filters -->
+                    <Border Grid.Row="0" Background="{StaticResource CyberCardBrush}" BorderBrush="{StaticResource CyberBorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <!-- Instant Search Box -->
+                            <TextBox Grid.Column="0" x:Name="SearchBox" Text="{Binding SearchText}"
+                                     Watermark="Instant search events by PID, process name, path, registry key, network endpoint... (Ctrl+F)"
+                                     FontFamily="Consolas, Cascadia Code, Courier New, monospace" Margin="0,0,12,0" />
+
+                            <!-- Filter Category Toggle Buttons -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <RadioButton Content="All" GroupName="CatFilter" IsChecked="True" Click="OnCategoryFilterClick" Tag="All" />
+                                <RadioButton Content="Injections" GroupName="CatFilter" Click="OnCategoryFilterClick" Tag="Injection" />
+                                <RadioButton Content="Files" GroupName="CatFilter" Click="OnCategoryFilterClick" Tag="File" />
+                                <RadioButton Content="Registry" GroupName="CatFilter" Click="OnCategoryFilterClick" Tag="Registry" />
+                                <RadioButton Content="Network" GroupName="CatFilter" Click="OnCategoryFilterClick" Tag="Network" />
+                                <RadioButton Content="Processes" GroupName="CatFilter" Click="OnCategoryFilterClick" Tag="Process" />
+                                <Button Content="Clear" Command="{Binding ClearEventsCommand}" Classes="Small" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Virtualized DataGrid -->
+                    <Border Grid.Row="1" Background="{StaticResource CyberCardBrush}" BorderBrush="{StaticResource CyberBorderBrush}"
+                            BorderThickness="1" CornerRadius="6">
+                        <DataGrid ItemsSource="{Binding DisplayEvents}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  GridLinesVisibility="Horizontal"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="True">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="TIME (UTC)" Binding="{Binding TimestampUtc}" Width="150"
+                                                    FontFamily="Consolas, monospace" />
+                                <DataGridTemplateColumn Header="CATEGORY" Width="100">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="grpc:TelemetryEnvelope">
+                                            <Border Background="{Binding Category, Converter={x:Static conv:UiConverters.CategoryToBrush}}"
+                                                    CornerRadius="3" Padding="6,2" HorizontalAlignment="Center" Margin="2">
+                                                <TextBlock Text="{Binding Category}" FontSize="11" FontWeight="Bold" Foreground="Black" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="80"
+                                                    FontFamily="Consolas, monospace" />
+                                <DataGridTextColumn Header="PROCESS" Binding="{Binding ProcessImage}" Width="160"
+                                                    FontFamily="Consolas, monospace" FontWeight="Bold" />
+                                <DataGridTextColumn Header="SUMMARY &amp; DETAILS" Binding="{Binding Summary}" Width="*"
+                                                    FontFamily="Consolas, monospace" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 2: Process Hierarchy Tree -->
+            <TabItem Header="🌳 Process Hierarchy Tree">
+                <Border Background="{StaticResource CyberCardBrush}" BorderBrush="{StaticResource CyberBorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="16" Margin="0,8,0,0">
+                    <TreeView ItemsSource="{Binding ProcessTreeNodes}">
+                        <TreeView.ItemTemplate>
+                            <TreeDataTemplate DataType="models:ProcessTreeItem" ItemsSource="{Binding Children}">
+                                <Border BorderBrush="{Binding IsInjectionTarget, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}"
+                                        BorderThickness="{Binding IsInjectionTarget, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}"
+                                        Background="#161f33" CornerRadius="6" Padding="12,8" Margin="0,4,0,4">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <!-- Process Icon & Identity -->
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <TextBlock Text="⚙" FontSize="14" Foreground="{StaticResource NeonCyanBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding ImageName}" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                                            <Border Background="#1c263d" CornerRadius="3" Padding="6,2" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding ProcessId, StringFormat='{}PID: {0}'}" FontSize="11"
+                                                           FontFamily="Consolas, monospace" Foreground="White" />
+                                            </Border>
+                                            <TextBlock Text="{Binding ParentProcessId, StringFormat='{}PPID: {0}'}" FontSize="11"
+                                                       FontFamily="Consolas, monospace" Foreground="{StaticResource ThreatCleanBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+
+                                        <!-- Injection Badge -->
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="16,0,0,0" VerticalAlignment="Center">
+                                            <Border IsVisible="{Binding IsInjectionTarget}" Background="#ff2a55" CornerRadius="3" Padding="8,2">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock Text="⚠ INJECTED TARGET" FontWeight="ExtraBold" FontSize="11" Foreground="White" />
+                                                    <TextBlock Text="{Binding InjectedByPid, StringFormat='{}(By PID: {0})'}" FontSize="11" Foreground="White" />
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBlock Text="{Binding CommandLine}" FontSize="11" FontFamily="Consolas, monospace"
+                                                       Foreground="{StaticResource ThreatCleanBrush}" TextTrimming="CharacterEllipsis" MaxWidth="500" />
+                                        </StackPanel>
+
+                                        <!-- Status Badge -->
+                                        <Border Grid.Column="2" Background="#1c263d" CornerRadius="3" Padding="6,2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="Bold"
+                                                       Foreground="{Binding IsRunning, Converter={x:Static conv:UiConverters.ThreatLevelToBrush}}" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </TreeDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </Border>
+            </TabItem>
+
+            <!-- TAB 3: Threat Verdict Scorecard & IOCs -->
+            <TabItem Header="🛡 Threat Verdict Scorecard &amp; IOCs">
+                <Border Background="{StaticResource CyberCardBrush}" BorderBrush="{StaticResource CyberBorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                    <Grid RowDefinitions="Auto,*">
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+                            <TextBlock Text="DISCOVERED INDICATORS OF COMPROMISE (IOC):" FontWeight="Bold" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                            <Button Content="Copy All IOCs to Clipboard" Command="{Binding CopyIocCommand}" Classes="Small" />
+                        </StackPanel>
+
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding ThreatIndicators}"
+                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                  CanUserResizeColumns="True" GridLinesVisibility="Horizontal">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="SEVERITY" Binding="{Binding Severity}" Width="100" FontWeight="Bold" />
+                                <DataGridTextColumn Header="MITRE ATT&amp;CK" Binding="{Binding MitreTechniqueId}" Width="120"
+                                                    FontFamily="Consolas, monospace" />
+                                <DataGridTextColumn Header="TITLE / RULE" Binding="{Binding Title}" Width="250" FontWeight="Bold" />
+                                <DataGridTextColumn Header="DESCRIPTION" Binding="{Binding Description}" Width="*" />
+                                <DataGridTextColumn Header="EVIDENCE" Binding="{Binding Evidence}" Width="250"
+                                                    FontFamily="Consolas, monospace" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- TAB 4: Agent Connection & IPC Settings -->
+            <TabItem Header="⚙ Agent &amp; IPC Settings">
+                <Border Background="{StaticResource CyberCardBrush}" BorderBrush="{StaticResource CyberBorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="20" Margin="0,8,0,0">
+                    <StackPanel Spacing="16" MaxWidth="600" HorizontalAlignment="Left">
+                        <TextBlock Text="EXESCOPE AGENT CONNECTION CONFIGURATION" FontWeight="Bold" FontSize="14" Foreground="White" />
+                        <TextBlock Text="Connect the GUI to a local or remote low-level Windows collection agent via gRPC / Named Pipes."
+                                   FontSize="12" Foreground="{StaticResource ThreatCleanBrush}" />
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Agent Address / Pipe:" FontWeight="Bold" FontSize="12" Foreground="White" />
+                            <TextBox Text="{Binding AgentAddress}" Watermark="127.0.0.1:50051 or ExeScopeAgentPipe"
+                                     FontFamily="Consolas, monospace" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="IPC Auth Token:" FontWeight="Bold" FontSize="12" Foreground="White" />
+                            <TextBox Text="{Binding AuthToken}" PasswordChar="*"
+                                     FontFamily="Consolas, monospace" />
+                        </StackPanel>
+
+                        <Button Content="Connect to Agent" Command="{Binding ConnectAgentCommand}" Classes="Primary" HorizontalAlignment="Left" />
+
+                        <Border Background="#1c263d" BorderBrush="{StaticResource CyberBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Security &amp; Isolation Notice:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource NeonCyanBrush}" />
+                                <TextBlock Text="The gRPC channel authenticates using high-entropy 256-bit authorization tokens with local file permissions. The UI process runs as standard user, completely decoupled from ETW kernel hooks."
+                                           FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- Bottom Status Bar -->
+        <Border Grid.Row="3" Background="{StaticResource CyberCardBrush}" BorderBrush="{StaticResource CyberBorderBrush}"
+                BorderThickness="1" CornerRadius="6" Padding="14,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <!-- Status Message -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="STATUS:" FontWeight="Bold" FontSize="11" Foreground="{StaticResource ThreatCleanBrush}" />
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="11" Foreground="White" />
+                </StackPanel>
+
+                <!-- Live Metrics Counter -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding TotalEventsCount, StringFormat='{}Events: {0:N0}'}" FontSize="11"
+                               FontFamily="Consolas, monospace" Foreground="White" />
+                    <TextBlock Text="{Binding InjectionsCount, StringFormat='{}Injections: {0}'}" FontSize="11"
+                               FontFamily="Consolas, monospace" Foreground="#ff2a55" FontWeight="Bold" />
+                    <TextBlock Text="{Binding FilesCount, StringFormat='{}Files: {0}'}" FontSize="11"
+                               FontFamily="Consolas, monospace" Foreground="#00e5ff" />
+                    <TextBlock Text="{Binding RegistryCount, StringFormat='{}Reg: {0}'}" FontSize="11"
+                               FontFamily="Consolas, monospace" Foreground="#ff9800" />
+                    <TextBlock Text="{Binding NetworkCount, StringFormat='{}Net: {0}'}" FontSize="11"
+                               FontFamily="Consolas, monospace" Foreground="#00ff88" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+    </Grid>
+</Window>
