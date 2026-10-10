@@ -43,6 +43,7 @@ public class MainViewModel : ViewModelBase
     private AnalysisSessionState _state = AnalysisSessionState.Ready;
     private string _statusMessage = "Ready for analysis";
     private string _searchText = string.Empty;
+    private int? _searchPid;
     private string _selectedCategory = "All";
 
     // Threat Verdict
@@ -174,6 +175,7 @@ public class MainViewModel : ViewModelBase
         {
             if (SetProperty(ref _searchText, value))
             {
+                _searchPid = int.TryParse(value?.Trim(), out int pid) ? pid : null;
                 ApplyFilter();
             }
         }
@@ -516,11 +518,14 @@ public class MainViewModel : ViewModelBase
         if (string.IsNullOrWhiteSpace(_searchText))
             return true;
 
+        if (_searchPid.HasValue && env.ProcessId == _searchPid.Value)
+            return true;
+
         string query = _searchText.Trim();
-        return env.ProcessId.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
-               env.ProcessImage.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        return env.ProcessImage.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                env.Summary.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-               env.Category.Contains(query, StringComparison.OrdinalIgnoreCase);
+               env.Category.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+               (query.Length > 0 && char.IsDigit(query[0]) && env.ProcessId.ToString().Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
     private void ApplyFilter()

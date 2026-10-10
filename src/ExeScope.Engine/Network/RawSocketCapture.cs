@@ -106,12 +106,10 @@ public class RawSocketCapture : IAsyncDisposable
                 int received = _socket.Receive(buffer);
                 if (received > 20) // IPv4 header is at least 20 bytes
                 {
-                    byte[] packet = new byte[received];
-                    Buffer.BlockCopy(buffer, 0, packet, 0, received);
-
-                    if (IsPacketRelevant(packet))
+                    var packetSpan = buffer.AsSpan(0, received);
+                    if (IsPacketRelevant(packetSpan))
                     {
-                        _pcapWriter.WritePacket(packet, DateTime.UtcNow);
+                        _pcapWriter.WritePacket(packetSpan, DateTime.UtcNow);
                     }
                 }
             }
@@ -129,7 +127,14 @@ public class RawSocketCapture : IAsyncDisposable
 
     public bool IsPacketRelevant(byte[] packet)
     {
-        if (packet == null || packet.Length < 20)
+        if (packet == null)
+            return false;
+        return IsPacketRelevant(packet.AsSpan());
+    }
+
+    public bool IsPacketRelevant(ReadOnlySpan<byte> packet)
+    {
+        if (packet.Length < 20)
             return false;
 
         int ipVersion = (packet[0] >> 4) & 0x0F;

@@ -10,6 +10,10 @@ namespace ExeScope.Core.Utilities;
 /// </summary>
 public class BulkObservableCollection<T> : ObservableCollection<T>
 {
+    private static readonly PropertyChangedEventArgs CountPropertyChanged = new(nameof(Count));
+    private static readonly PropertyChangedEventArgs IndexerPropertyChanged = new("Item[]");
+    private static readonly NotifyCollectionChangedEventArgs ResetCollectionChanged = new(NotifyCollectionChangedAction.Reset);
+
     private bool _suppressNotification;
     private readonly int _maxCapacity;
 
@@ -73,9 +77,9 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
             _suppressNotification = false;
         }
 
-        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
-        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
-        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+        OnPropertyChanged(CountPropertyChanged);
+        OnPropertyChanged(IndexerPropertyChanged);
+        OnCollectionChanged(ResetCollectionChanged);
     }
 
     public void PrependRange(IEnumerable<T> items)
@@ -115,8 +119,8 @@ public class BulkObservableCollection<T> : ObservableCollection<T>
             _suppressNotification = false;
         }
 
-        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
-        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
-        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+        OnPropertyChanged(CountPropertyChanged);
+        OnPropertyChanged(IndexerPropertyChanged);
+        OnCollectionChanged(ResetCollectionChanged);
     }
 }

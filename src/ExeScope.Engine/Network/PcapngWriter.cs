@@ -58,7 +58,14 @@ public sealed class PcapngWriter : IDisposable
 
     public void WritePacket(byte[] packetData, DateTime timestampUtc)
     {
-        if (_isDisposed || packetData == null || packetData.Length == 0)
+        if (packetData == null)
+            return;
+        WritePacket(packetData.AsSpan(), timestampUtc);
+    }
+
+    public void WritePacket(ReadOnlySpan<byte> packetData, DateTime timestampUtc)
+    {
+        if (_isDisposed || packetData.IsEmpty)
             return;
 
         lock (_lock)

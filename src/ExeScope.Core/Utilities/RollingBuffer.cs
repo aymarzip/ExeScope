@@ -31,7 +31,10 @@ public class RollingBuffer<T> : IEnumerable<T>
         lock (_syncRoot)
         {
             _buffer[_head] = item;
-            _head = (_head + 1) % _buffer.Length;
+            if (++_head == _buffer.Length)
+            {
+                _head = 0;
+            }
             if (_count < _buffer.Length)
             {
                 _count++;
@@ -44,37 +47,32 @@ public class RollingBuffer<T> : IEnumerable<T>
     {
         ArgumentNullException.ThrowIfNull(items);
 
+        int added = 0;
         lock (_syncRoot)
         {
             foreach (var item in items)
             {
                 _buffer[_head] = item;
-                _head = (_head + 1) % _buffer.Length;
+                if (++_head == _buffer.Length)
+                {
+                    _head = 0;
+                }
                 if (_count < _buffer.Length)
                 {
                     _count++;
                 }
-                Interlocked.Increment(ref _totalAdded);
+                added++;
             }
+        }
+        if (added > 0)
+        {
+            Interlocked.Add(ref _totalAdded, added);
         }
     }
 
     public List<T> ToList()
     {
-        lock (_syncRoot)
-        {
-            var list = new List<T>(_count);
-            if (_count == 0)
-                return list;
-
-            int start = (_count < _buffer.Length) ? 0 : _head;
-            for (int i = 0; i < _count; i++)
-            {
-                int index = (start + i) % _buffer.Length;
-                list.Add(_buffer[index]);
-            }
-            return list;
-        }
+        return new List<T>(ToArray());
     }
 
     public T[] ToArray()
@@ -85,11 +83,18 @@ public class RollingBuffer<T> : IEnumerable<T>
                 return Array.Empty<T>();
 
             var result = new T[_count];
-            int start = (_count < _buffer.Length) ? 0 : _head;
-            for (int i = 0; i < _count; i++)
+            if (_count < _buffer.Length)
             {
-                int index = (start + i) % _buffer.Length;
-                result[i] = _buffer[index];
+                Array.Copy(_buffer, 0, result, 0, _count);
+            }
+            else
+            {
+                int tailLen = _buffer.Length - _head;
+                Array.Copy(_buffer, _head, result, 0, tailLen);
+                if (_head > 0)
+                {
+                    Array.Copy(_buffer, 0, result, tailLen, _head);
+                }
             }
             return result;
         }

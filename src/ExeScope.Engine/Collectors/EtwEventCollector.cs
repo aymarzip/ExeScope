@@ -282,44 +282,74 @@ public class EtwEventCollector : IEventCollector
 
         kernel.TcpIpConnect += data =>
         {
-            HandleNetworkEvent(data.ProcessID, data.TimeStamp.ToUniversalTime(), NetworkProtocol.TCP, NetworkDirection.Outbound,
-                data.saddr?.ToString() ?? "0.0.0.0", data.sport,
-                data.daddr?.ToString() ?? "0.0.0.0", data.dport, null);
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                EmitNetworkEvent(tracked, pid, utcTime, NetworkProtocol.TCP, NetworkDirection.Outbound,
+                    data.saddr?.ToString() ?? "0.0.0.0", data.sport,
+                    data.daddr?.ToString() ?? "0.0.0.0", data.dport, null);
+            }
         };
 
         kernel.TcpIpAccept += data =>
         {
-            HandleNetworkEvent(data.ProcessID, data.TimeStamp.ToUniversalTime(), NetworkProtocol.TCP, NetworkDirection.Inbound,
-                data.daddr?.ToString() ?? "0.0.0.0", data.dport,
-                data.saddr?.ToString() ?? "0.0.0.0", data.sport, null);
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                EmitNetworkEvent(tracked, pid, utcTime, NetworkProtocol.TCP, NetworkDirection.Inbound,
+                    data.daddr?.ToString() ?? "0.0.0.0", data.dport,
+                    data.saddr?.ToString() ?? "0.0.0.0", data.sport, null);
+            }
         };
 
         kernel.TcpIpSend += data =>
         {
-            HandleNetworkEvent(data.ProcessID, data.TimeStamp.ToUniversalTime(), NetworkProtocol.TCP, NetworkDirection.Outbound,
-                data.saddr?.ToString() ?? "0.0.0.0", data.sport,
-                data.daddr?.ToString() ?? "0.0.0.0", data.dport, data.size);
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                EmitNetworkEvent(tracked, pid, utcTime, NetworkProtocol.TCP, NetworkDirection.Outbound,
+                    data.saddr?.ToString() ?? "0.0.0.0", data.sport,
+                    data.daddr?.ToString() ?? "0.0.0.0", data.dport, data.size);
+            }
         };
 
         kernel.TcpIpRecv += data =>
         {
-            HandleNetworkEvent(data.ProcessID, data.TimeStamp.ToUniversalTime(), NetworkProtocol.TCP, NetworkDirection.Inbound,
-                data.daddr?.ToString() ?? "0.0.0.0", data.dport,
-                data.saddr?.ToString() ?? "0.0.0.0", data.sport, data.size);
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                EmitNetworkEvent(tracked, pid, utcTime, NetworkProtocol.TCP, NetworkDirection.Inbound,
+                    data.daddr?.ToString() ?? "0.0.0.0", data.dport,
+                    data.saddr?.ToString() ?? "0.0.0.0", data.sport, data.size);
+            }
         };
 
         kernel.UdpIpSend += data =>
         {
-            HandleNetworkEvent(data.ProcessID, data.TimeStamp.ToUniversalTime(), NetworkProtocol.UDP, NetworkDirection.Outbound,
-                data.saddr?.ToString() ?? "0.0.0.0", data.sport,
-                data.daddr?.ToString() ?? "0.0.0.0", data.dport, data.size);
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                EmitNetworkEvent(tracked, pid, utcTime, NetworkProtocol.UDP, NetworkDirection.Outbound,
+                    data.saddr?.ToString() ?? "0.0.0.0", data.sport,
+                    data.daddr?.ToString() ?? "0.0.0.0", data.dport, data.size);
+            }
         };
 
         kernel.UdpIpRecv += data =>
         {
-            HandleNetworkEvent(data.ProcessID, data.TimeStamp.ToUniversalTime(), NetworkProtocol.UDP, NetworkDirection.Inbound,
-                data.daddr?.ToString() ?? "0.0.0.0", data.dport,
-                data.saddr?.ToString() ?? "0.0.0.0", data.sport, data.size);
+            int pid = data.ProcessID;
+            var utcTime = data.TimeStamp.ToUniversalTime();
+            if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            {
+                EmitNetworkEvent(tracked, pid, utcTime, NetworkProtocol.UDP, NetworkDirection.Inbound,
+                    data.daddr?.ToString() ?? "0.0.0.0", data.dport,
+                    data.saddr?.ToString() ?? "0.0.0.0", data.sport, data.size);
+            }
         };
 
         kernel.ImageLoad += data =>
@@ -399,88 +429,85 @@ public class EtwEventCollector : IEventCollector
 
     private void HandleFileEvent(int pid, DateTime utcTime, FileOperationType op, string? fileName, string status, long? byteOffset = null, long? byteCount = null)
     {
+        if (!_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            return;
+
         if (string.IsNullOrWhiteSpace(fileName))
             return;
 
-        if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+        var evt = new FileEvent
         {
-            var evt = new FileEvent
-            {
-                EventId = Interlocked.Increment(ref _nextEventId),
-                TimestampUtc = utcTime,
-                ProcessId = pid,
-                ProcessImage = tracked?.ImageName ?? string.Empty,
-                Operation = op,
-                Path = fileName,
-                Result = status,
-                ByteOffset = byteOffset,
-                ByteCount = byteCount,
-                HasCapturedBytes = false,
-                Summary = $"File {op}: {fileName} ({status})"
-            };
-            Emit(evt);
+            EventId = Interlocked.Increment(ref _nextEventId),
+            TimestampUtc = utcTime,
+            ProcessId = pid,
+            ProcessImage = tracked?.ImageName ?? string.Empty,
+            Operation = op,
+            Path = fileName,
+            Result = status,
+            ByteOffset = byteOffset,
+            ByteCount = byteCount,
+            HasCapturedBytes = false,
+            Summary = $"File {op}: {fileName} ({status})"
+        };
+        Emit(evt);
 
-            // If file was created, written, or renamed, signal artifact collector
-            if (op is FileOperationType.Create or FileOperationType.Write or FileOperationType.Rename)
-            {
-                _onFileModifiedForArtifact?.Invoke(fileName, pid, tracked?.ImageName ?? string.Empty);
-                _injectionDetector?.OnFileWriteByTrackedProcess(pid, fileName, utcTime);
-            }
+        // If file was created, written, or renamed, signal artifact collector
+        if (op is FileOperationType.Create or FileOperationType.Write or FileOperationType.Rename)
+        {
+            _onFileModifiedForArtifact?.Invoke(fileName, pid, tracked?.ImageName ?? string.Empty);
+            _injectionDetector?.OnFileWriteByTrackedProcess(pid, fileName, utcTime);
         }
     }
 
     private void HandleRegistryEvent(int pid, DateTime utcTime, RegistryOperationType op, string? keyName, int status, string? valueName = null)
     {
+        if (!_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+            return;
+
         if (string.IsNullOrWhiteSpace(keyName))
             return;
 
-        if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
+        string statusStr = status == 0 ? "SUCCESS" : $"0x{status:X8}";
+        var evt = new RegistryEvent
         {
-            string statusStr = status == 0 ? "SUCCESS" : $"0x{status:X8}";
-            var evt = new RegistryEvent
-            {
-                EventId = Interlocked.Increment(ref _nextEventId),
-                TimestampUtc = utcTime,
-                ProcessId = pid,
-                ProcessImage = tracked?.ImageName ?? string.Empty,
-                Operation = op,
-                KeyPath = keyName,
-                ValueName = valueName,
-                Result = statusStr,
-                Summary = $"Registry {op}: {keyName}{(string.IsNullOrEmpty(valueName) ? "" : $"\\{valueName}")}"
-            };
-            Emit(evt);
-        }
+            EventId = Interlocked.Increment(ref _nextEventId),
+            TimestampUtc = utcTime,
+            ProcessId = pid,
+            ProcessImage = tracked?.ImageName ?? string.Empty,
+            Operation = op,
+            KeyPath = keyName,
+            ValueName = valueName,
+            Result = statusStr,
+            Summary = $"Registry {op}: {keyName}{(string.IsNullOrEmpty(valueName) ? "" : $"\\{valueName}")}"
+        };
+        Emit(evt);
     }
 
-    private void HandleNetworkEvent(int pid, DateTime utcTime, NetworkProtocol proto, NetworkDirection dir,
+    private void EmitNetworkEvent(TrackedProcess? tracked, int pid, DateTime utcTime, NetworkProtocol proto, NetworkDirection dir,
         string localAddr, int localPort, string remoteAddr, int remotePort, long? bytes)
     {
-        if (_correlationEngine.IsProcessTracked(pid, utcTime, out var tracked))
-        {
-            string? note = remotePort == 443 ? "TLS encrypted stream (metadata preserved, payload not decrypted)" : null;
+        string? note = remotePort == 443 ? "TLS encrypted stream (metadata preserved, payload not decrypted)" : null;
 
-            var evt = new NetworkEvent
-            {
-                EventId = Interlocked.Increment(ref _nextEventId),
-                TimestampUtc = utcTime,
-                ProcessId = pid,
-                ProcessImage = tracked?.ImageName ?? string.Empty,
-                Protocol = proto,
-                Direction = dir,
-                LocalAddress = localAddr,
-                LocalPort = localPort,
-                RemoteAddress = remoteAddr,
-                RemotePort = remotePort,
-                BytesTransferred = bytes,
-                CorrelationMethod = NetworkCorrelationMethod.ExactPidMatch,
-                Confidence = "High",
-                SecurityNotes = note,
-                Summary = $"{proto} {dir}: {localAddr}:{localPort} <-> {remoteAddr}:{remotePort}" +
-                          (bytes.HasValue ? $" ({bytes} bytes)" : "")
-            };
-            Emit(evt);
-        }
+        var evt = new NetworkEvent
+        {
+            EventId = Interlocked.Increment(ref _nextEventId),
+            TimestampUtc = utcTime,
+            ProcessId = pid,
+            ProcessImage = tracked?.ImageName ?? string.Empty,
+            Protocol = proto,
+            Direction = dir,
+            LocalAddress = localAddr,
+            LocalPort = localPort,
+            RemoteAddress = remoteAddr,
+            RemotePort = remotePort,
+            BytesTransferred = bytes,
+            CorrelationMethod = NetworkCorrelationMethod.ExactPidMatch,
+            Confidence = "High",
+            SecurityNotes = note,
+            Summary = $"{proto} {dir}: {localAddr}:{localPort} <-> {remoteAddr}:{remotePort}" +
+                      (bytes.HasValue ? $" ({bytes} bytes)" : "")
+        };
+        Emit(evt);
     }
 
     private void Emit(AnalysisEvent evt)

@@ -274,15 +274,16 @@ public class InjectionDetector : IDisposable
                || ext.Equals(".ocx", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static readonly string WindowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
     private static bool IsSystemModule(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return true;
 
-        var normalized = path.Replace('/', '\\');
+        var normalized = path.IndexOf('/') >= 0 ? path.Replace('/', '\\') : path;
 
-        string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        if (!string.IsNullOrEmpty(winDir) && normalized.StartsWith(winDir, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(WindowsDir) && normalized.StartsWith(WindowsDir, StringComparison.OrdinalIgnoreCase))
             return true;
 
         if (normalized.StartsWith(@"C:\Windows\", StringComparison.OrdinalIgnoreCase))

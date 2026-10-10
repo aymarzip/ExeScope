@@ -15,6 +15,7 @@ public class ProcessCorrelationEngine
     private readonly List<TrackedProcess> _allProcesses = new();
     private readonly Dictionary<int, List<TrackedProcess>> _processesByPid = new();
     private readonly Dictionary<int, TrackedProcess> _injectionTargets = new();
+    private readonly ConcurrentDictionary<int, byte> _activeTrackedPids = new();
 
     private TrackedProcess? _rootProcess;
     private bool _rootProcessLaunched;
@@ -173,6 +174,12 @@ public class ProcessCorrelationEngine
     /// </summary>
     public bool IsRootOrChildProcess(int pid, DateTime timestampUtc, out TrackedProcess? tracked)
     {
+        if (!_activeTrackedPids.ContainsKey(pid))
+        {
+            tracked = null;
+            return false;
+        }
+
         lock (_sync)
         {
             tracked = FindTrackedProcess(pid, timestampUtc);
@@ -187,6 +194,13 @@ public class ProcessCorrelationEngine
     /// </summary>
     public bool IsProcessTracked(int pid, DateTime timestampUtc, out TrackedProcess? tracked)
     {
+        // Zero-lock fast path for untracked OS processes
+        if (!_activeTrackedPids.ContainsKey(pid))
+        {
+            tracked = null;
+            return false;
+        }
+
         lock (_sync)
         {
             tracked = FindTrackedProcess(pid, timestampUtc);
@@ -321,6 +335,9 @@ public class ProcessCorrelationEngine
 
     public bool IsInjectionTarget(int pid)
     {
+        if (!_activeTrackedPids.ContainsKey(pid))
+            return false;
+
         lock (_sync)
         {
             return _injectionTargets.ContainsKey(pid);
@@ -329,6 +346,12 @@ public class ProcessCorrelationEngine
 
     public bool IsProcessTrackedOrInjectionTarget(int pid, DateTime timestampUtc, out TrackedProcess? tracked)
     {
+        if (!_activeTrackedPids.ContainsKey(pid))
+        {
+            tracked = null;
+            return false;
+        }
+
         lock (_sync)
         {
             tracked = FindTrackedProcess(pid, timestampUtc);
@@ -392,6 +415,7 @@ public class ProcessCorrelationEngine
             _processesByPid[proc.ProcessId] = list;
         }
         list.Add(proc);
+        _activeTrackedPids.TryAdd(proc.ProcessId, 0);
     }
 
     private TrackedProcess? FindActiveParent(int parentPid, DateTime childStartTimeUtc)

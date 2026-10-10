@@ -72,6 +72,7 @@ public class FileSessionStorage : ISessionStorage
         _queue.TryEnqueue(evt);
     }
 
+    private static readonly byte[] NewlineBytes = [(byte)'\n'];
     private volatile TaskCompletionSource? _pendingFlush;
 
     private async Task ProcessQueueAsync(CancellationToken ct)
@@ -87,7 +88,8 @@ public class FileSessionStorage : ISessionStorage
             FileShare.Read,
             bufferSize: 262144,
             useAsync: true);
-        await using var streamWriter = new StreamWriter(fileStream);
+
+        CancellationTokenSource? waitTimeoutCts = null;
 
         try
         {
@@ -98,9 +100,13 @@ public class FileSessionStorage : ISessionStorage
                 bool hasItems;
                 try
                 {
-                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    cts.CancelAfter(TimeSpan.FromMilliseconds(150));
-                    hasItems = await reader.WaitToReadAsync(cts.Token).ConfigureAwait(false);
+                    if (waitTimeoutCts == null || !waitTimeoutCts.TryReset())
+                    {
+                        waitTimeoutCts?.Dispose();
+                        waitTimeoutCts = new CancellationTokenSource();
+                    }
+                    waitTimeoutCts.CancelAfter(TimeSpan.FromMilliseconds(150));
+                    hasItems = await reader.WaitToReadAsync(waitTimeoutCts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
@@ -112,7 +118,7 @@ public class FileSessionStorage : ISessionStorage
                     batch.Add(evt);
                     if (batch.Count >= maxBatchSize)
                     {
-                        await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
+                        await WriteBatchAsync(fileStream, batch).ConfigureAwait(false);
                         batch.Clear();
                         lastFlushTime = DateTime.UtcNow;
                     }
@@ -120,12 +126,12 @@ public class FileSessionStorage : ISessionStorage
 
                 if (batch.Count > 0 && (DateTime.UtcNow - lastFlushTime).TotalMilliseconds >= 150)
                 {
-                    await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
+                    await WriteBatchAsync(fileStream, batch).ConfigureAwait(false);
                     batch.Clear();
                     lastFlushTime = DateTime.UtcNow;
                 }
 
-                await CheckAndCompleteFlushAsync(streamWriter, batch).ConfigureAwait(false);
+                await CheckAndCompleteFlushAsync(fileStream, batch).ConfigureAwait(false);
 
                 if (!hasItems && reader.Completion.IsCompleted)
                 {
@@ -140,11 +146,11 @@ public class FileSessionStorage : ISessionStorage
 
             if (batch.Count > 0)
             {
-                await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
+                await WriteBatchAsync(fileStream, batch).ConfigureAwait(false);
                 batch.Clear();
             }
 
-            await CheckAndCompleteFlushAsync(streamWriter, batch).ConfigureAwait(false);
+            await CheckAndCompleteFlushAsync(fileStream, batch).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -154,16 +160,20 @@ public class FileSessionStorage : ISessionStorage
             }
             if (batch.Count > 0)
             {
-                await WriteBatchAsync(streamWriter, batch).ConfigureAwait(false);
+                await WriteBatchAsync(fileStream, batch).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
         {
             _logger.Error("Storage", "Error writing events to events.jsonl", ex);
         }
+        finally
+        {
+            waitTimeoutCts?.Dispose();
+        }
     }
 
-    private async Task CheckAndCompleteFlushAsync(StreamWriter writer, List<AnalysisEvent> batch)
+    private async Task CheckAndCompleteFlushAsync(FileStream stream, List<AnalysisEvent> batch)
     {
         var flush = Interlocked.Exchange(ref _pendingFlush, null);
         if (flush != null)
@@ -172,10 +182,10 @@ public class FileSessionStorage : ISessionStorage
             {
                 if (batch.Count > 0)
                 {
-                    await WriteBatchAsync(writer, batch).ConfigureAwait(false);
+                    await WriteBatchAsync(stream, batch).ConfigureAwait(false);
                     batch.Clear();
                 }
-                await writer.FlushAsync().ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
             }
             catch
             {
@@ -184,15 +194,15 @@ public class FileSessionStorage : ISessionStorage
         }
     }
 
-    private async Task WriteBatchAsync(StreamWriter writer, List<AnalysisEvent> batch)
+    private async Task WriteBatchAsync(FileStream stream, List<AnalysisEvent> batch)
     {
         for (int i = 0; i < batch.Count; i++)
         {
-            string line = JsonSerializer.Serialize(batch[i], CompactJsonOptions);
-            writer.WriteLine(line);
+            JsonSerializer.Serialize(stream, batch[i], CompactJsonOptions);
+            stream.Write(NewlineBytes);
         }
 
-        await writer.FlushAsync().ConfigureAwait(false);
+        await stream.FlushAsync().ConfigureAwait(false);
         Interlocked.Add(ref _totalEventsWritten, batch.Count);
     }
 
