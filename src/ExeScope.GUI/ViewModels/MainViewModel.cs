@@ -471,9 +471,9 @@ public class MainViewModel : ViewModelBase
         {
             target.IsInjectionTarget = true;
             target.InjectedByPid = inj.SourceProcessId;
-            if (!string.IsNullOrEmpty(inj.InjectedModulePath) && !target.InjectedModules.Contains(inj.InjectedModulePath))
+            if (!string.IsNullOrEmpty(inj.InjectedModulePath))
             {
-                target.InjectedModules.Add(inj.InjectedModulePath);
+                target.AddInjectedModule(inj.InjectedModulePath);
             }
         }
     }

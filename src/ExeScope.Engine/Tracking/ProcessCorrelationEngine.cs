@@ -287,19 +287,33 @@ public class ProcessCorrelationEngine
             : null;
 
         var parent = (injector != null && !injector.IsInjectionTarget) ? injector : _rootProcess;
+        if (ReferenceEquals(parent, target) || IsDescendantOf(target, parent.ProcessId))
+        {
+            parent = _rootProcess;
+        }
+
+        if (ReferenceEquals(parent, target) || IsDescendantOf(target, parent.ProcessId))
+        {
+            return;
+        }
+
         if (!parent.Children.Any(c => c.ProcessId == target.ProcessId && c.IsInjectionTarget))
         {
             parent.Children.Add(target);
         }
     }
 
-    private static bool IsDescendantOf(TrackedProcess parent, int targetPid)
+    private static bool IsDescendantOf(TrackedProcess parent, int targetPid, HashSet<TrackedProcess>? visited = null)
     {
+        visited ??= new HashSet<TrackedProcess>(ReferenceEqualityComparer.Instance);
+        if (!visited.Add(parent))
+            return false;
+
         foreach (var child in parent.Children)
         {
             if (child.ProcessId == targetPid)
                 return true;
-            if (IsDescendantOf(child, targetPid))
+            if (IsDescendantOf(child, targetPid, visited))
                 return true;
         }
         return false;
@@ -336,8 +350,11 @@ public class ProcessCorrelationEngine
         }
     }
 
-    private ProcessNode MapToNode(TrackedProcess proc)
+    private ProcessNode MapToNode(TrackedProcess proc, HashSet<TrackedProcess>? visited = null)
     {
+        visited ??= new HashSet<TrackedProcess>(ReferenceEqualityComparer.Instance);
+        visited.Add(proc);
+
         var node = new ProcessNode
         {
             ProcessId = proc.ProcessId,
@@ -357,7 +374,10 @@ public class ProcessCorrelationEngine
 
         foreach (var child in proc.Children)
         {
-            node.Children.Add(MapToNode(child));
+            if (!visited.Contains(child))
+            {
+                node.Children.Add(MapToNode(child, visited));
+            }
         }
 
         return node;

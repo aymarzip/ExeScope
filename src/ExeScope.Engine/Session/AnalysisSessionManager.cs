@@ -55,6 +55,8 @@ public class AnalysisSessionManager : IAsyncDisposable
     public long TotalEventsRecorded => _storage?.TotalEventsWritten ?? _inMemoryEvents.TotalAdded;
     public long TotalEventsDropped => _storage?.TotalEventsDropped ?? 0;
     public long SessionSizeBytes => _storage?.CalculateSessionSizeBytes() ?? 0;
+    public FileArtifactCollector? ArtifactCollector => _artifactCollector;
+    public ProcessCorrelationEngine? CorrelationEngine => _correlationEngine;
     public bool IsElevated => _isElevated;
 
     public event Action<AnalysisSessionState>? StateChanged;
@@ -392,9 +394,16 @@ public class AnalysisSessionManager : IAsyncDisposable
             _pcapWriter?.Dispose();
             _pcapWriter = null;
 
+            long artifactsSaved = 0;
+            long artifactsSkipped = 0;
+            long artifactBytesWritten = 0;
+
             if (_artifactCollector != null)
             {
                 await _artifactCollector.DisposeAsync().ConfigureAwait(false);
+                artifactsSaved = _artifactCollector.TotalSaved;
+                artifactsSkipped = _artifactCollector.TotalSkipped;
+                artifactBytesWritten = _artifactCollector.TotalBytesWritten;
                 _artifactCollector = null;
             }
 
@@ -407,9 +416,9 @@ public class AnalysisSessionManager : IAsyncDisposable
                 _currentMetadata.ExitReason = reason;
                 _currentMetadata.TotalEventsRecorded = _storage?.TotalEventsWritten ?? _inMemoryEvents.TotalAdded;
                 _currentMetadata.TotalEventsDropped = _storage?.TotalEventsDropped ?? 0;
-                _currentMetadata.TotalArtifactsSaved = _artifactCollector?.TotalSaved ?? 0;
-                _currentMetadata.TotalArtifactsSkipped = _artifactCollector?.TotalSkipped ?? 0;
-                _currentMetadata.TotalArtifactBytesWritten = _artifactCollector?.TotalBytesWritten ?? 0;
+                _currentMetadata.TotalArtifactsSaved = artifactsSaved;
+                _currentMetadata.TotalArtifactsSkipped = artifactsSkipped;
+                _currentMetadata.TotalArtifactBytesWritten = artifactBytesWritten;
 
                 _storage?.SaveSessionMetadata(_currentMetadata);
             }

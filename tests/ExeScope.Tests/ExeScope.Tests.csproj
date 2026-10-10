@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\ExeScope.Core\ExeScope.Core.csproj" />
     <ProjectReference Include="..\..\src\ExeScope.Contracts\ExeScope.Contracts.csproj" />
     <ProjectReference Include="..\..\src\ExeScope.Engine\ExeScope.Engine.csproj" />
+    <ProjectReference Include="..\..\src\ExeScope.GUI\ExeScope.GUI.csproj" />
   </ItemGroup>
 
 </Project>

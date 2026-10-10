@@ -82,7 +82,7 @@ public class FileArtifactCollector : IAsyncDisposable
 
     private void WorkerLoop()
     {
-        while (_isRunning && !_queue.IsCompleted)
+        while (!_queue.IsCompleted)
         {
             try
             {
@@ -90,6 +90,15 @@ public class FileArtifactCollector : IAsyncDisposable
                 {
                     ProcessArtifactTask(task);
                 }
+                else if (!_isRunning)
+                {
+                    break;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Queue was marked completed
+                break;
             }
             catch (Exception ex)
             {
@@ -270,11 +279,17 @@ public class FileArtifactCollector : IAsyncDisposable
 
         _isDisposed = true;
         _isRunning = false;
-        _queue.CompleteAdding();
+        try
+        {
+            _queue.CompleteAdding();
+        }
+        catch (InvalidOperationException)
+        {
+        }
 
         if (_workerThread != null && _workerThread.IsAlive)
         {
-            _workerThread.Join(1500);
+            _workerThread.Join(3000);
         }
 
         lock (_indexFileLock)

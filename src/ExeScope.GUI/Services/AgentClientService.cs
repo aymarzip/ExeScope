@@ -188,6 +188,12 @@ public class AgentClientService : IAsyncDisposable
                 try
                 {
                     using var call = _client.StreamEvents(new StreamEventsRequest { AuthToken = _authToken }, CreateAuthHeaders(), cancellationToken: ct);
+                    if (!_isConnected)
+                    {
+                        _isConnected = true;
+                        ConnectionStateChanged?.Invoke(true, "Connected (Telemetry stream active)");
+                    }
+
                     while (await call.ResponseStream.MoveNext(ct).ConfigureAwait(false))
                     {
                         var env = call.ResponseStream.Current;
@@ -198,8 +204,13 @@ public class AgentClientService : IAsyncDisposable
                 {
                     break;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    if (_isConnected)
+                    {
+                        _isConnected = false;
+                        ConnectionStateChanged?.Invoke(false, $"Connection lost: {ex.Message}");
+                    }
                     await Task.Delay(1000, ct).ConfigureAwait(false);
                 }
             }
@@ -222,8 +233,13 @@ public class AgentClientService : IAsyncDisposable
                 {
                     break;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    if (_isConnected)
+                    {
+                        _isConnected = false;
+                        ConnectionStateChanged?.Invoke(false, $"Artifact stream error: {ex.Message}");
+                    }
                     await Task.Delay(1000, ct).ConfigureAwait(false);
                 }
             }
